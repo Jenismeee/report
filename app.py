@@ -303,6 +303,15 @@ def analyze(df):
 
 
     # --------------------------------------------------------
+    # 第三方 EZBUY / 月 / 项目 / 柜号
+    #
+    # 用于报告中列出具体 EZBUY 柜号及项目
+    # --------------------------------------------------------
+
+    third_project_month = defaultdict(set)
+
+
+    # --------------------------------------------------------
     # ICA / 项目 / 月 / 柜号
     # --------------------------------------------------------
 
@@ -502,6 +511,15 @@ def analyze(df):
 
         # ----------------------------------------------------
         # EZBUY 第三方
+        #
+        # 只要 Remarks For Container 包含 EZBUY，
+        # 就代表这个柜交给 EZBUY 第三方拆柜。
+        #
+        # EZBUY 柜：
+        # 1. 计入总柜量
+        # 2. 计入原项目数量
+        # 3. 计入第三方拆柜数量
+        # 4. 不计入 PANDAN 拆柜数量
         # ----------------------------------------------------
 
         if is_ezbuy(remarks):
@@ -527,6 +545,17 @@ def analyze(df):
             )
 
 
+            # 保存 EZBUY 柜号 + 项目
+            third_project_month[
+                (
+                    mk,
+                    project
+                )
+            ].add(
+                container
+            )
+
+
     return (
 
         project_week,
@@ -534,6 +563,8 @@ def analyze(df):
         third_month,
 
         third_week,
+
+        third_project_month,
 
         ica_project_month,
 
@@ -562,6 +593,8 @@ def build_html(df):
         tm,
 
         tw,
+
+        tpm,
 
         ipm,
 
@@ -988,6 +1021,61 @@ th{
 }
 
 
+.third-list{
+
+    margin-top:10px;
+
+    border-top:1px solid #dbe8f4;
+
+    padding-top:8px;
+
+}
+
+
+.third-item{
+
+    padding:7px 9px;
+
+    margin:4px 0;
+
+    background:#f8fcf9;
+
+    border:1px solid #dcece3;
+
+    border-radius:7px;
+
+    font-family:
+        'Consolas',
+        'Courier New',
+        monospace;
+
+    font-size:13px;
+
+    font-weight:600;
+
+    color:#285d3e;
+
+    text-align:left;
+
+}
+
+
+.third-project{
+
+    font-size:11px;
+
+    color:#627485;
+
+    margin-left:8px;
+
+    font-family:
+        'Segoe UI',
+        'Microsoft YaHei',
+        sans-serif;
+
+}
+
+
 .legend{
 
     display:flex;
@@ -1034,6 +1122,7 @@ th{
 
     }
 
+
 }
 
 
@@ -1051,6 +1140,7 @@ th{
         grid-template-columns:1fr;
 
     }
+
 
 }
 
@@ -1094,6 +1184,9 @@ th{
 
 <strong>PANDAN 拆柜规则：</strong>
 
+实际由 PANDAN 仓库拆柜的项目包括
+COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。
+
 LAZADA、COMONE 直达、PDD-SPX
 不计入 PANDAN。
 
@@ -1101,7 +1194,8 @@ Remarks For Container
 出现
 <strong>EZBUY</strong>
 的柜子属于第三方拆柜，
-不计入 PANDAN。
+虽然计入清关总柜量及原项目数量，
+但不计入 PANDAN。
 
 <br>
 
@@ -1193,7 +1287,17 @@ Remarks For Container
 
         month_overall = 0
 
-        month_third = 0
+        month_third = len(
+
+            tm.get(
+                (
+                    mk,
+                    'EZBUY'
+                ),
+                set()
+            )
+
+        )
 
 
         # ICA 全部柜号
@@ -1267,38 +1371,76 @@ Remarks For Container
             # EZBUY 第三方
             # ------------------------------------------------
 
+            third_containers = tw[
+                (
+                    mk,
+                    w,
+                    'EZBUY'
+                )
+            ]
+
+
             third = len(
-
-                tw[
-                    (
-                        mk,
-                        w,
-                        'EZBUY'
-                    )
-                ]
-
+                third_containers
             )
 
 
             # ------------------------------------------------
             # PANDAN
             #
-            # 只有 PANDAN_PROJECTS 可以进入
+            # 这里按照“逐柜判断”的业务规则计算。
             #
-            # 然后扣掉 EZBUY
+            # 只有以下项目可以属于 PANDAN：
+            #
+            # COMONE PANDAN
+            # TAOBAO
+            # PDD
+            # CAINIAO-COM
+            #
+            # 然后排除实际交给 EZBUY 的柜子。
+            #
+            # 因此：
+            #
+            # PDD + EZBUY
+            #     → 不计 PANDAN
+            #
+            # PDD-SPX
+            #     → 从项目层面就不属于 PANDAN
+            #
+            # LAZADA
+            #     → 从项目层面就不属于 PANDAN
+            #
+            # COMONE 直达
+            #     → 从项目层面就不属于 PANDAN
             # ------------------------------------------------
 
-            pandan = max(
+            pandan_containers = set()
 
-                0,
 
-                sum(
-                    counts[p]
-                    for p in PANDAN_PROJECTS
+            for p in PANDAN_PROJECTS:
+
+                pandan_containers.update(
+
+                    pw[
+                        (
+                            mk,
+                            w,
+                            p
+                        )
+                    ]
+
                 )
-                -
-                third
 
+
+            # EZBUY 柜即使属于 PDD / TAOBAO /
+            # CAINIAO-COM / COMONE PANDAN，
+            # 也不是 PANDAN 仓库拆柜，所以排除。
+
+            pandan_containers -= third_containers
+
+
+            pandan = len(
+                pandan_containers
             )
 
 
@@ -1314,8 +1456,6 @@ Remarks For Container
             month_pandan += pandan
 
             month_overall += overall
-
-            month_third += third
 
 
             # ------------------------------------------------
@@ -1621,6 +1761,103 @@ ICA / RED SEAL 柜。
 
 
         # ====================================================
+        # EZBUY 第三方拆柜柜号列表
+        # ====================================================
+
+        third_items = []
+
+
+        third_month_containers = sorted(
+
+            tm.get(
+                (
+                    mk,
+                    'EZBUY'
+                ),
+                set()
+            )
+
+        )
+
+
+        for container in third_month_containers:
+
+            project_names = []
+
+
+            for p in PROJECT_ORDER:
+
+                if container in tpm[
+                    (
+                        mk,
+                        p
+                    )
+                ]:
+
+                    project_names.append(
+                        DISPLAY[p]
+                    )
+
+
+            if project_names:
+
+                project_text = (
+                    ' / '.join(
+                        project_names
+                    )
+                )
+
+                project_html = (
+
+                    f'''
+<span class="third-project">
+项目：{html.escape(project_text)}
+</span>
+'''
+
+                )
+
+            else:
+
+                project_html = ''
+
+
+            third_items.append(
+
+                f'''
+<div class="third-item">
+
+{html.escape(container)}
+
+{project_html}
+
+</div>
+'''
+
+            )
+
+
+        if third_items:
+
+            third_list_html = ''.join(
+                third_items
+            )
+
+        else:
+
+            third_list_html = '''
+
+<div class="small">
+
+本月没有交给
+EZBUY 拆柜的柜子。
+
+</div>
+
+'''
+
+
+        # ====================================================
         # 无法归类 ICA
         # ====================================================
 
@@ -1665,7 +1902,7 @@ ICA 总数量及 ICA 柜号列表。
 
         # ====================================================
         # 月度 HTML
-        # ====================================================
+        # ========================================================
 
         out.append(
 
@@ -1945,6 +2182,43 @@ ICA / RED SEAL 柜号
 
 
 {warning_html}
+
+</div>
+
+
+<!-- ===================================================
+     EZBUY 第三方拆柜柜号
+     =================================================== -->
+
+<div class="card">
+
+<h3 class="h3">
+
+第三方 EZBUY 拆柜
+
+</h3>
+
+
+<div class="small">
+
+本月共
+<strong>
+{month_third}
+</strong>
+个柜交给 EZBUY 第三方拆柜。
+
+这些柜子仍计入清关总柜量及原项目数量，
+但不计入 PANDAN 拆柜数量。
+
+</div>
+
+
+<div class="third-list">
+
+{third_list_html}
+
+</div>
+
 
 </div>
 
