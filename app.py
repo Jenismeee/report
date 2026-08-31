@@ -18,6 +18,7 @@ PROJECT_ORDER = [
     'COMONE_PANDAN',
     'TAOBAO',
     'PDD',
+    'PDD_SPX',
     'CAINIAO_COM',
     'CAINIAO_COE'
 ]
@@ -27,6 +28,7 @@ PANDAN_PROJECTS = {
     'COMONE_PANDAN',
     'TAOBAO',
     'PDD',
+    'PDD_SPX',
     'CAINIAO_COM'
 }
 
@@ -42,13 +44,14 @@ DISPLAY = {
     'COMONE_PANDAN': 'COMONE PANDAN',
     'TAOBAO': 'TAOBAO',
     'PDD': 'PDD',
+    'PDD_SPX': 'PDD-SPX',
     'CAINIAO_COM': 'CAINIAO-COM',
     'CAINIAO_COE': 'CAINIAO-COE'
 }
 
 
 # ============================================================
-# 日期 / 周次
+# 周次
 # ============================================================
 
 def week_no(d):
@@ -61,7 +64,12 @@ def week_no(d):
     )
 
 
+# ============================================================
+# 日期
+# ============================================================
+
 def parse_date(v):
+
     if pd.isna(v) or v is None or str(v).strip() == '':
         return None
 
@@ -70,12 +78,18 @@ def parse_date(v):
 
     try:
         return pd.to_datetime(v).to_pydatetime()
+
     except Exception:
+
         try:
             return (
                 pd.Timestamp('1899-12-30')
-                + pd.to_timedelta(float(str(v).strip()), unit='D')
+                + pd.to_timedelta(
+                    float(str(v).strip()),
+                    unit='D'
+                )
             ).to_pydatetime()
+
         except Exception:
             return None
 
@@ -85,16 +99,37 @@ def parse_date(v):
 # ============================================================
 
 def project_key(platform, ref):
+
     p = str(platform).strip().upper()
-    r = str(ref) if not pd.isna(ref) else ''
 
+    r = (
+        str(ref)
+        if not pd.isna(ref)
+        else ''
+    )
+
+    # COMONE
     if p == 'COMONE':
-        return (
-            'COMONE_DIRECT'
-            if re.search(r'DIRECT', r, re.I)
-            else 'COMONE_PANDAN'
-        )
 
+        if re.search(
+            r'DIRECT',
+            r,
+            re.I
+        ):
+            return 'COMONE_DIRECT'
+
+        return 'COMONE_PANDAN'
+
+    # PDD-SPX
+    if p in {
+        'PDD-SPX',
+        'PDD SPX',
+        'PDD_SPX',
+        'PDDSXP'
+    }:
+        return 'PDD_SPX'
+
+    # 普通项目
     return {
         'LAZADA': 'LAZADA',
         'TAOBAO': 'TAOBAO',
@@ -105,10 +140,11 @@ def project_key(platform, ref):
 
 
 # ============================================================
-# 读取 Excel
+# 读取 Overall
 # ============================================================
 
 def read_overall(file_bytes):
+
     return pd.read_excel(
         io.BytesIO(file_bytes),
         sheet_name='Overall',
@@ -132,13 +168,15 @@ def analyze(df):
     ]
 
     missing = [
-        c for c in required
+        c
+        for c in required
         if c not in df.columns
     ]
 
     if missing:
         raise ValueError(
-            'Overall 缺少列：' + ', '.join(missing)
+            'Overall 缺少列：'
+            + ', '.join(missing)
         )
 
     # 项目每周柜号
@@ -150,19 +188,13 @@ def analyze(df):
     # 第三方每周柜号
     third_week = defaultdict(set)
 
-    # 原来的 ICA 项目统计
+    # ICA 项目每月柜号
     ica_project_month = defaultdict(set)
 
-    # 新增：
-    # ICA / RED SEAL 每月全部柜号
-    #
-    # 重要：
-    # 这个统计不再依赖 project_key()
-    # 因此不会因为 Platform 无法识别而漏掉 ICA 柜。
+    # ICA 每月全部柜号
     ica_month = defaultdict(set)
 
-    # 新增：
-    # 记录哪些 ICA 柜没有成功归入项目
+    # 无法归类的 ICA
     ica_unassigned_month = defaultdict(set)
 
     months = set()
@@ -170,11 +202,17 @@ def analyze(df):
     for _, row in df.iterrows():
 
         platform = str(
-            row.get('Platform', '')
+            row.get(
+                'Platform',
+                ''
+            )
         ).strip()
 
         container = str(
-            row.get('Container No.', '')
+            row.get(
+                'Container No.',
+                ''
+            )
         ).strip()
 
         if (
@@ -188,30 +226,54 @@ def analyze(df):
         # ----------------------------------------------------
 
         d = (
-            parse_date(row.get('Unstuffing Date'))
-            or parse_date(row.get('Gate Out Date'))
+            parse_date(
+                row.get('Unstuffing Date')
+            )
+            or
+            parse_date(
+                row.get('Gate Out Date')
+            )
         )
 
         if not d or d.year != 2026:
             continue
 
-        mk = f'{d.year:04d}-{d.month:02d}'
+        mk = (
+            f'{d.year:04d}-{d.month:02d}'
+        )
+
         wk = week_no(d)
 
         months.add(mk)
 
         # ----------------------------------------------------
-        # ICA / RED SEAL
-        #
-        # 必须在 project_key() 前面判断。
-        #
-        # 这样即使 Platform 无法归类，
-        # ICA 柜仍然会被记录。
+        # Remarks
         # ----------------------------------------------------
 
         remarks = str(
-            row.get('Remarks For Container', '')
+            row.get(
+                'Remarks For Container',
+                ''
+            )
         )
+
+        # ----------------------------------------------------
+        # ICA / RED SEAL
+        #
+        # 只要包含：
+        #
+        # ICA RED SEAL
+        #
+        # 就算 ICA。
+        #
+        # 例如：
+        #
+        # ICA RED SEAL
+        # ICA RED SEAL 10AM
+        # Priority - ICA RED SEAL
+        #
+        # 都会被识别。
+        # ----------------------------------------------------
 
         is_ica = bool(
             re.search(
@@ -222,8 +284,11 @@ def analyze(df):
         )
 
         if is_ica:
-            # 每月全部 ICA 柜
-            ica_month[mk].add(container)
+
+            # ICA 总柜号
+            ica_month[mk].add(
+                container
+            )
 
         # ----------------------------------------------------
         # 项目
@@ -237,14 +302,15 @@ def analyze(df):
             )
         )
 
-        # 如果项目无法识别：
-        # 但它是 ICA，就单独记录下来
-        # 方便报告检查。
+        # 如果项目无法识别
         if not project:
+
             if is_ica:
-                ica_unassigned_month[mk].add(
-                    container
-                )
+
+                ica_unassigned_month[
+                    mk
+                ].add(container)
+
             continue
 
         # ----------------------------------------------------
@@ -252,7 +318,11 @@ def analyze(df):
         # ----------------------------------------------------
 
         project_week[
-            (mk, wk, project)
+            (
+                mk,
+                wk,
+                project
+            )
         ].add(container)
 
         # ----------------------------------------------------
@@ -260,8 +330,12 @@ def analyze(df):
         # ----------------------------------------------------
 
         if is_ica:
+
             ica_project_month[
-                (mk, project)
+                (
+                    mk,
+                    project
+                )
             ].add(container)
 
         # ----------------------------------------------------
@@ -275,7 +349,8 @@ def analyze(df):
 
             vendor = next(
                 (
-                    v for v in VENDORS
+                    v
+                    for v in VENDORS
                     if re.search(
                         re.escape(v),
                         remarks,
@@ -288,11 +363,18 @@ def analyze(df):
             if vendor:
 
                 third_month[
-                    (mk, vendor)
+                    (
+                        mk,
+                        vendor
+                    )
                 ].add(container)
 
                 third_week[
-                    (mk, wk, vendor)
+                    (
+                        mk,
+                        wk,
+                        vendor
+                    )
                 ].add(container)
 
     return (
@@ -302,7 +384,10 @@ def analyze(df):
         ica_project_month,
         ica_month,
         ica_unassigned_month,
-        sorted(months, reverse=True)
+        sorted(
+            months,
+            reverse=True
+        )
     )
 
 
@@ -327,6 +412,7 @@ def build_html(df):
     out.append(
         '''
 <!doctype html>
+
 <html lang="zh-CN">
 
 <head>
@@ -361,7 +447,8 @@ body{
     border:1px solid #d8e6f3;
     border-radius:18px;
     padding:18px;
-    box-shadow:0 10px 20px rgba(54,98,145,.08);
+    box-shadow:
+        0 10px 20px rgba(54,98,145,.08);
     margin-bottom:16px;
 }
 
@@ -379,7 +466,8 @@ body{
 
 .summary{
     display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
+    grid-template-columns:
+        repeat(4,minmax(0,1fr));
     gap:10px;
     margin:14px 0 8px;
 }
@@ -425,7 +513,8 @@ body{
 
 .grid{
     display:grid;
-    grid-template-columns:1.45fr .95fr;
+    grid-template-columns:
+        1.45fr .95fr;
     gap:16px;
     margin-top:12px;
 }
@@ -511,7 +600,9 @@ th{
     display:inline-block;
 }
 
-/* ICA 柜号列表 */
+/* ==========================================================
+   ICA 柜号
+   ========================================================== */
 
 .ica-list{
     margin-top:10px;
@@ -525,7 +616,10 @@ th{
     background:#f7fbf9;
     border:1px solid #dcece3;
     border-radius:7px;
-    font-family:'Consolas','Courier New',monospace;
+    font-family:
+        'Consolas',
+        'Courier New',
+        monospace;
     font-size:13px;
     font-weight:600;
     color:#24583a;
@@ -560,7 +654,8 @@ th{
     }
 
     .summary{
-        grid-template-columns:repeat(2,minmax(0,1fr));
+        grid-template-columns:
+            repeat(2,minmax(0,1fr));
     }
 
 }
@@ -584,6 +679,7 @@ th{
 <body>
 
 <div class="wrap">
+
 '''
     )
 
@@ -591,18 +687,35 @@ th{
         '''
 <section class="hero">
 
-<h1>《商壹仓库清关拆柜月度看板》</h1>
+<h1>
+《商壹仓库清关拆柜月度看板》
+</h1>
 
 <p>
+
 2026年数据。
-所有项目若 <strong>Unstuffing Date</strong> 为空，
-会统一回退到 <strong>Gate Out Date</strong> 来归月归周。
-第三方拆柜只识别 <strong>Remarks For Container</strong>；
+
+所有项目若
+<strong>Unstuffing Date</strong>
+为空，会统一回退到
+<strong>Gate Out Date</strong>
+来归月归周。
+
+第三方拆柜只识别
+<strong>Remarks For Container</strong>；
+
 COMONE 直达只识别
-<strong>Cainiao B/L Ref/ Other Ref</strong> 中的 DIRECT。
+<strong>Cainiao B/L Ref/ Other Ref</strong>
+中的 DIRECT。
+
+ICA / RED SEAL 会根据
+<strong>Remarks For Container</strong>
+自动识别。
+
 </p>
 
 </section>
+
 '''
     )
 
@@ -612,7 +725,10 @@ COMONE 直达只识别
 
     for mk in months:
 
-        y, m = map(int, mk.split('-'))
+        y, m = map(
+            int,
+            mk.split('-')
+        )
 
         active = []
 
@@ -620,12 +736,20 @@ COMONE 直达只识别
 
             s = (
                 sum(
-                    len(pw[(mk, w, p)])
+                    len(
+                        pw[
+                            (mk, w, p)
+                        ]
+                    )
                     for p in PROJECT_ORDER
                 )
                 +
                 sum(
-                    len(tw[(mk, w, v)])
+                    len(
+                        tw[
+                            (mk, w, v)
+                        ]
+                    )
                     for v in VENDORS
                 )
             )
@@ -641,13 +765,14 @@ COMONE 直达只识别
         month_third = 0
 
         # ====================================================
-        # ICA：
-        # 使用新的 ICA 全部柜号统计
-        # 不再依赖项目归类
+        # ICA 全部柜号
         # ====================================================
 
         month_ica_containers = sorted(
-            im.get(mk, set())
+            im.get(
+                mk,
+                set()
+            )
         )
 
         month_ica = len(
@@ -666,14 +791,16 @@ COMONE 直达只识别
         ts = []
 
         # ====================================================
-        # 周统计
+        # 每周
         # ====================================================
 
         for w in active:
 
             counts = {
                 p: len(
-                    pw[(mk, w, p)]
+                    pw[
+                        (mk, w, p)
+                    ]
                 )
                 for p in PROJECT_ORDER
             }
@@ -683,7 +810,9 @@ COMONE 直达只识别
 
             third = sum(
                 len(
-                    tw[(mk, w, v)]
+                    tw[
+                        (mk, w, v)
+                    ]
                 )
                 for v in VENDORS
             )
@@ -705,7 +834,9 @@ COMONE 直达只识别
             month_overall += overall
             month_third += third
 
-            start = 1 + (w - 1) * 7
+            start = 1 + (
+                (w - 1) * 7
+            )
 
             end = min(
                 (
@@ -721,40 +852,51 @@ COMONE 直达只识别
 
             cells = ''.join(
                 (
-                    "<td class='coe'>%s</td>"
-                    % counts[p]
+                    "<td class='coe'>"
+                    f"{counts[p]}"
+                    "</td>"
                 )
                 if p == 'CAINIAO_COE'
+
                 else
+
                 (
-                    "<td>%s</td>"
-                    % counts[p]
+                    "<td>"
+                    f"{counts[p]}"
+                    "</td>"
                 )
+
                 for p in PROJECT_ORDER
             )
 
             rows.append(
-                f"""
+                f'''
 <tr>
 
-<td>第{w}周</td>
+<td>
+第{w}周
+</td>
 
-<td class='mono'>
+<td class="mono">
 {start} 至 {end}号
 </td>
 
 {cells}
 
-<td class='pandanCell'>
-<strong>{pandan}</strong>
+<td class="pandanCell">
+<strong>
+{pandan}
+</strong>
 </td>
 
-<td class='totalCell'>
-<strong>{overall}</strong>
+<td class="totalCell">
+<strong>
+{overall}
+</strong>
 </td>
 
 </tr>
-"""
+'''
             )
 
             ps.append(pandan)
@@ -767,15 +909,20 @@ COMONE 直达只识别
 
         total_cells = ''.join(
             (
-                "<td class='coe'>%s</td>"
-                % totals[p]
+                "<td class='coe'>"
+                f"{totals[p]}"
+                "</td>"
             )
             if p == 'CAINIAO_COE'
+
             else
+
             (
-                "<td>%s</td>"
-                % totals[p]
+                "<td>"
+                f"{totals[p]}"
+                "</td>"
             )
+
             for p in PROJECT_ORDER
         )
 
@@ -788,27 +935,51 @@ COMONE 直达只识别
         for p in PROJECT_ORDER:
 
             c = len(
-                ipm[(mk, p)]
+                ipm[
+                    (mk, p)
+                ]
             )
 
             if c:
+
                 ica_project_rows.append(
-                    f"""
+                    f'''
 <tr>
-<td>{DISPLAY[p]}</td>
-<td><strong>{c}</strong></td>
+
+<td>
+{DISPLAY[p]}
+</td>
+
+<td>
+<strong>
+{c}
+</strong>
+</td>
+
 </tr>
-"""
+'''
                 )
+
+        # 项目 ICA 总数
+        classified_ica_count = sum(
+            len(
+                ipm[
+                    (mk, p)
+                ]
+            )
+            for p in PROJECT_ORDER
+        )
 
         if not ica_project_rows:
 
             ica_project_rows = [
                 '''
 <tr>
+
 <td colspan="2">
 本月无已归类项目的 ICA / RED SEAL 记录
 </td>
+
 </tr>
 '''
             ]
@@ -819,13 +990,12 @@ COMONE 直达只识别
                 f'''
 <tr class="rowTotal">
 
-<td>合计</td>
+<td>
+合计
+</td>
 
 <td>
-{sum(
-    len(ipm[(mk, p)])
-    for p in PROJECT_ORDER
-)}
+{classified_ica_count}
 </td>
 
 </tr>
@@ -857,11 +1027,14 @@ COMONE 直达只识别
 '''
 
         # ====================================================
-        # 未归类 ICA 提示
+        # 未归类 ICA
         # ====================================================
 
         unassigned = sorted(
-            iu.get(mk, set())
+            iu.get(
+                mk,
+                set()
+            )
         )
 
         if unassigned:
@@ -869,9 +1042,17 @@ COMONE 直达只识别
             warning_html = f'''
 <div class="ica-warning">
 
-<strong>提示：</strong>
-本月有 {len(unassigned)} 个 ICA / RED SEAL 柜
+<strong>
+提示：
+</strong>
+
+本月有
+<strong>
+{len(unassigned)}
+</strong>
+个 ICA / RED SEAL 柜
 没有成功归入现有项目分类，
+
 但它们已经被 ICA 总数及柜号列表正确统计。
 
 </div>
@@ -882,7 +1063,7 @@ COMONE 直达只识别
             warning_html = ''
 
         # ====================================================
-        # 月度 HTML
+        # 输出月份
         # ====================================================
 
         out.append(
@@ -894,19 +1075,29 @@ COMONE 直达只识别
 </h2>
 
 <div class="small">
-每个月按周查看清关、拆柜、第三方及 ICA / RED SEAL 情况
+
+每个月按周查看清关、拆柜、
+第三方及 ICA / RED SEAL 情况
+
 </div>
 
+
 <div class="summary">
+
 
 <div class="pill pandan">
 
 <div class="label">
-PANDAN拆柜合计 PANDAN UNSTUFFING TOTAL
+
+PANDAN拆柜合计
+PANDAN UNSTUFFING TOTAL
+
 </div>
 
 <div class="value">
+
 {month_pandan}
+
 </div>
 
 </div>
@@ -915,11 +1106,16 @@ PANDAN拆柜合计 PANDAN UNSTUFFING TOTAL
 <div class="pill total">
 
 <div class="label">
-总柜量合计 OVERALL TOTAL
+
+总柜量合计
+OVERALL TOTAL
+
 </div>
 
 <div class="value">
+
 {month_overall}
+
 </div>
 
 </div>
@@ -928,11 +1124,16 @@ PANDAN拆柜合计 PANDAN UNSTUFFING TOTAL
 <div class="pill third">
 
 <div class="label">
-第三方拆柜合计 THIRD-PARTY UNSTUFFING TOTAL
+
+第三方拆柜合计
+THIRD-PARTY UNSTUFFING TOTAL
+
 </div>
 
 <div class="value">
+
 {month_third}
+
 </div>
 
 </div>
@@ -941,24 +1142,34 @@ PANDAN拆柜合计 PANDAN UNSTUFFING TOTAL
 <div class="pill ica">
 
 <div class="label">
+
 ICA / RED SEAL 合计
+
 </div>
 
 <div class="value">
+
 {month_ica}
+
 <span class="ica-count">
+
 {month_ica} 个柜
+
 </span>
+
 </div>
 
 </div>
+
 
 </div>
 
 
 <div class="grid">
 
+
 <div class="card">
+
 
 <table>
 
@@ -966,22 +1177,31 @@ ICA / RED SEAL 合计
 
 <tr>
 
-<th>周次 WEEK</th>
+<th>
+周次 WEEK
+</th>
 
-<th>日期 DATE</th>
+<th>
+日期 DATE
+</th>
 
 {
     ''.join(
         (
-            "<th class='coe'>%s</th>"
-            % DISPLAY[p]
+            "<th class='coe'>"
+            f"{DISPLAY[p]}"
+            "</th>"
         )
         if p == 'CAINIAO_COE'
+
         else
+
         (
-            "<th>%s</th>"
-            % DISPLAY[p]
+            "<th>"
+            f"{DISPLAY[p]}"
+            "</th>"
         )
+
         for p in PROJECT_ORDER
     )
 }
@@ -998,9 +1218,11 @@ PANDAN拆柜
 
 </thead>
 
+
 <tbody>
 
 {''.join(rows)}
+
 
 <tr class="rowTotal">
 
@@ -1020,6 +1242,7 @@ PANDAN拆柜
 
 </tr>
 
+
 </tbody>
 
 </table>
@@ -1030,15 +1253,18 @@ PANDAN拆柜
 <div class="stack">
 
 
-<!-- =====================================================
+<!-- ======================================================
      ICA 项目分布
      ====================================================== -->
 
 <div class="card">
 
 <h3 class="h3">
+
 ICA / RED SEAL 项目分布
+
 </h3>
+
 
 <table>
 
@@ -1058,9 +1284,12 @@ ICA / RED SEAL 项目分布
 
 </thead>
 
+
 <tbody>
 
-{''.join(ica_project_rows)}
+{''.join(
+    ica_project_rows
+)}
 
 </tbody>
 
@@ -1069,20 +1298,31 @@ ICA / RED SEAL 项目分布
 </div>
 
 
-<!-- =====================================================
-     ICA 柜号列表
+<!-- ======================================================
+     ICA 柜号
      ====================================================== -->
 
 <div class="card">
 
 <h3 class="h3">
+
 ICA / RED SEAL 柜号
+
 </h3>
 
+
 <div class="small">
-本月共 {month_ica} 个 ICA / RED SEAL 柜。
+
+本月共
+<strong>
+{month_ica}
+</strong>
+个 ICA / RED SEAL 柜。
+
 每个柜号单独一行。
+
 </div>
+
 
 <div class="ica-list">
 
@@ -1090,12 +1330,13 @@ ICA / RED SEAL 柜号
 
 </div>
 
+
 {warning_html}
 
 </div>
 
 
-<!-- =====================================================
+<!-- ======================================================
      趋势图
      ====================================================== -->
 
@@ -1115,27 +1356,39 @@ ICA / RED SEAL 柜号
 <div class="legend">
 
 <span>
+
 <i
     class="sw"
     style="background:#1f6f96"
 ></i>
+
 PANDAN拆柜
+
 </span>
 
+
 <span>
+
 <i
     class="sw"
     style="background:#4f86c6"
 ></i>
-总柜量 OVERALL TOTAL
+
+总柜量
+OVERALL TOTAL
+
 </span>
 
+
 <span>
+
 <i
     class="sw"
     style="background:#2d7a4c"
 ></i>
+
 第三方
+
 </span>
 
 </div>
@@ -1204,7 +1457,7 @@ def chart_svg(
     ]
 
     # --------------------------------------------------------
-    # 网格线
+    # 网格
     # --------------------------------------------------------
 
     for i in range(6):
@@ -1243,13 +1496,22 @@ def chart_svg(
         )
 
     # --------------------------------------------------------
-    # 三条线
+    # 数据线
     # --------------------------------------------------------
 
     for vals, color in [
-        (pandan, '#1f6f96'),
-        (overall, '#4f86c6'),
-        (third, '#2d7a4c')
+        (
+            pandan,
+            '#1f6f96'
+        ),
+        (
+            overall,
+            '#4f86c6'
+        ),
+        (
+            third,
+            '#2d7a4c'
+        )
     ]:
 
         pts = []
@@ -1299,7 +1561,7 @@ def chart_svg(
             )
 
     # --------------------------------------------------------
-    # X 轴标签
+    # X 轴
     # --------------------------------------------------------
 
     for i, label in enumerate(labels):
@@ -1355,6 +1617,7 @@ file = st.file_uploader(
     type=['xlsx']
 )
 
+
 if file:
 
     if st.button(
@@ -1365,7 +1628,7 @@ if file:
         try:
 
             # ------------------------------------------------
-            # 读取 Excel
+            # 读取
             # ------------------------------------------------
 
             df = read_overall(
@@ -1381,7 +1644,7 @@ if file:
             months = result[-1]
 
             # ------------------------------------------------
-            # 生成报告
+            # 生成
             # ------------------------------------------------
 
             report = build_html(df)
@@ -1392,7 +1655,7 @@ if file:
             )
 
             # ------------------------------------------------
-            # 显示 HTML
+            # 显示
             # ------------------------------------------------
 
             st.components.v1.html(
@@ -1402,7 +1665,7 @@ if file:
             )
 
             # ------------------------------------------------
-            # 下载 HTML
+            # 下载
             # ------------------------------------------------
 
             st.download_button(
