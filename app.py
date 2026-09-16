@@ -9,7 +9,7 @@ import streamlit as st
 
 
 # ============================================================
-# 项目设置
+# Project设置
 # ============================================================
 
 # CAINIAO-COE 已删除
@@ -24,7 +24,7 @@ PROJECT_ORDER = [
 ]
 
 
-# 可以正常计入 PANDAN 的项目
+# 可以正常计入 PANDAN 的Project
 PANDAN_PROJECTS = {
     'COMONE_PANDAN',
     'TAOBAO',
@@ -118,7 +118,7 @@ def parse_date(v):
 
 
 # ============================================================
-# 项目判断
+# Project判断
 # ============================================================
 
 def project_key(platform, ref):
@@ -167,7 +167,7 @@ def project_key(platform, ref):
 
 
     # --------------------------------------------------------
-    # 普通项目
+    # 普通Project
     # --------------------------------------------------------
 
     mapping = {
@@ -275,14 +275,14 @@ def analyze(df):
     if missing:
 
         raise ValueError(
-            'Overall 缺少列：'
+            'Missing required columns in the Overall sheet: '
             +
             ', '.join(missing)
         )
 
 
     # --------------------------------------------------------
-    # 项目 / 周 / 柜号
+    # Project / 周 / 柜号
     # --------------------------------------------------------
 
     project_week = defaultdict(set)
@@ -303,16 +303,16 @@ def analyze(df):
 
 
     # --------------------------------------------------------
-    # 第三方 EZBUY / 月 / 项目 / 柜号
+    # EZBUY Third-Party / 月 / Project / 柜号
     #
-    # 用于报告中列出具体 EZBUY 柜号及项目
+    # 用于报告中列出具体 EZBUY 柜号及Project
     # --------------------------------------------------------
 
     third_project_month = defaultdict(set)
 
 
     # --------------------------------------------------------
-    # ICA / 项目 / 月 / 柜号
+    # ICA / Project / 月 / 柜号
     # --------------------------------------------------------
 
     ica_project_month = defaultdict(set)
@@ -446,7 +446,7 @@ def analyze(df):
 
 
         # ----------------------------------------------------
-        # 项目
+        # Project
         # ----------------------------------------------------
 
         project = project_key(
@@ -462,7 +462,7 @@ def analyze(df):
 
 
         # ----------------------------------------------------
-        # 如果项目无法识别
+        # 如果Project无法识别
         # ----------------------------------------------------
 
         if not project:
@@ -479,7 +479,7 @@ def analyze(df):
 
 
         # ----------------------------------------------------
-        # 项目每周统计
+        # Project每周统计
         # ----------------------------------------------------
 
         project_week[
@@ -494,7 +494,7 @@ def analyze(df):
 
 
         # ----------------------------------------------------
-        # ICA 项目统计
+        # ICA Project统计
         # ----------------------------------------------------
 
         if ica:
@@ -513,11 +513,11 @@ def analyze(df):
         # EZBUY 第三方
         #
         # 只要 Remarks For Container 包含 EZBUY，
-        # 就代表这个柜交给 EZBUY 第三方拆柜。
+        # 就代表这containers were handled by EZBUY for third-party unstuffing.
         #
         # EZBUY 柜：
-        # 1. 计入总柜量
-        # 2. 计入原项目数量
+        # 1. 计入Overall Total
+        # 2. 计入原Project数量
         # 3. 计入第三方拆柜数量
         # 4. 不计入 PANDAN 拆柜数量
         # ----------------------------------------------------
@@ -545,7 +545,7 @@ def analyze(df):
             )
 
 
-            # 保存 EZBUY 柜号 + 项目
+            # 保存 EZBUY 柜号 + Project
             third_project_month[
                 (
                     mk,
@@ -625,7 +625,7 @@ def build_html(df):
     content="width=device-width, initial-scale=1.0"
 >
 
-<title>商壹仓库月度看板</title>
+<title>Cargo Operations Dashboard</title>
 
 
 <style>
@@ -1167,44 +1167,42 @@ th{
 <section class="hero">
 
 <h1>
-《商壹仓库清关拆柜月度看板》
+Cargo Operations Dashboard
 </h1>
 
 <p>
 
-2026年数据。
+2026 data.
 
-所有项目若
+For all projects, if
 <strong>Unstuffing Date</strong>
-为空，会统一回退到
+is unavailable, the report falls back to
 <strong>Gate Out Date</strong>
-来归月归周。
+for monthly and weekly classification.
 
 <br>
 
-<strong>PANDAN 拆柜规则：</strong>
+<strong>PANDAN unstuffing rule:</strong>
 
-实际由 PANDAN 仓库拆柜的项目包括
+Projects handled by the PANDAN warehouse include
 COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。
 
-LAZADA、COMONE 直达、PDD-SPX
-不计入 PANDAN。
+LAZADA, COMONE Direct, and PDD-SPX
+are excluded from PANDAN.
 
-Remarks For Container
-出现
+If the Remarks For Container field contains
 <strong>EZBUY</strong>
-的柜子属于第三方拆柜，
-虽然计入清关总柜量及原项目数量，
-但不计入 PANDAN。
+the container is classified as third-party unstuffing.
+It is still included in the overall and original project counts,
+但are excluded from PANDAN.
 
 <br>
 
-<strong>ICA / RED SEAL：</strong>
+<strong>ICA / RED SEAL:</strong>
 
-Remarks For Container
-出现
+If the Remarks For Container field contains
 <strong>ICA RED SEAL</strong>
-即自动识别为 ICA 柜。
+the container is automatically classified as an ICA container.
 
 </p>
 
@@ -1390,7 +1388,7 @@ Remarks For Container
             #
             # 这里按照“逐柜判断”的业务规则计算。
             #
-            # 只有以下项目可以属于 PANDAN：
+            # 只有以下Project可以属于 PANDAN：
             #
             # COMONE PANDAN
             # TAOBAO
@@ -1405,13 +1403,13 @@ Remarks For Container
             #     → 不计 PANDAN
             #
             # PDD-SPX
-            #     → 从项目层面就不属于 PANDAN
+            #     → 从Project层面就不属于 PANDAN
             #
             # LAZADA
-            #     → 从项目层面就不属于 PANDAN
+            #     → 从Project层面就不属于 PANDAN
             #
             # COMONE 直达
-            #     → 从项目层面就不属于 PANDAN
+            #     → 从Project层面就不属于 PANDAN
             # ------------------------------------------------
 
             pandan_containers = set()
@@ -1445,7 +1443,7 @@ Remarks For Container
 
 
             # ------------------------------------------------
-            # 总柜量
+            # Overall Total
             # ------------------------------------------------
 
             overall = sum(
@@ -1489,7 +1487,7 @@ Remarks For Container
 
 
             # ------------------------------------------------
-            # 项目单元格
+            # Project单元格
             # ------------------------------------------------
 
             cells = ''.join(
@@ -1511,11 +1509,11 @@ Remarks For Container
 <tr>
 
 <td>
-第{w}周
+Week {w}
 </td>
 
 <td class="mono">
-{start} 至 {end}号
+{start} to {end}号
 </td>
 
 {cells}
@@ -1556,7 +1554,7 @@ Remarks For Container
 
 
         # ====================================================
-        # 项目月度总计
+        # Project月度Total
         # ====================================================
 
         total_cells = ''.join(
@@ -1573,7 +1571,7 @@ Remarks For Container
 
 
         # ====================================================
-        # ICA 项目分布
+        # ICA Project分布
         # ====================================================
 
         ica_project_rows = []
@@ -1645,7 +1643,7 @@ Remarks For Container
 
 <td colspan="2">
 
-本月无已归类项目的
+本月无已归类Project的
 ICA / RED SEAL 记录
 
 </td>
@@ -1663,7 +1661,7 @@ ICA / RED SEAL 记录
 <tr class="rowTotal">
 
 <td>
-合计
+Total
 </td>
 
 <td>
@@ -1714,7 +1712,7 @@ ICA / RED SEAL 记录
 
                     f'''
 <span class="ica-project">
-项目：{html.escape(project_text)}
+Project：{html.escape(project_text)}
 </span>
 '''
 
@@ -1752,8 +1750,7 @@ ICA / RED SEAL 记录
 
 <div class="small">
 
-本月没有
-ICA / RED SEAL 柜。
+No ICA / RED SEAL containers this month.
 
 </div>
 
@@ -1811,7 +1808,7 @@ ICA / RED SEAL 柜。
 
                     f'''
 <span class="third-project">
-项目：{html.escape(project_text)}
+Project：{html.escape(project_text)}
 </span>
 '''
 
@@ -1849,8 +1846,7 @@ ICA / RED SEAL 柜。
 
 <div class="small">
 
-本月没有交给
-EZBUY 拆柜的柜子。
+No containers were handled by EZBUY this month.
 
 </div>
 
@@ -1878,7 +1874,7 @@ EZBUY 拆柜的柜子。
 <div class="ica-warning">
 
 <strong>
-提示：
+Note:
 </strong>
 
 本月有
@@ -1886,10 +1882,9 @@ EZBUY 拆柜的柜子。
 {len(unassigned)}
 </strong>
 个 ICA / RED SEAL 柜
-没有成功归入现有项目分类，
+没有成功归入现有Project分类，
 
-但这些柜子已经计入
-ICA 总数量及 ICA 柜号列表。
+but they are still included in the total ICA count and container list.
 
 </div>
 
@@ -1916,9 +1911,7 @@ ICA 总数量及 ICA 柜号列表。
 
 <div class="small">
 
-每个月按周查看
-清关、拆柜、第三方
-及 ICA / RED SEAL 情况。
+Review customs clearance, unstuffing, third-party handling, and ICA / RED SEAL activity by week.
 
 </div>
 
@@ -1930,7 +1923,7 @@ ICA 总数量及 ICA 柜号列表。
 
 <div class="label">
 
-PANDAN拆柜合计
+PANDAN Unstuffing
 PANDAN UNSTUFFING TOTAL
 
 </div>
@@ -1948,7 +1941,7 @@ PANDAN UNSTUFFING TOTAL
 
 <div class="label">
 
-总柜量合计
+Overall Containers
 OVERALL TOTAL
 
 </div>
@@ -1966,7 +1959,7 @@ OVERALL TOTAL
 
 <div class="label">
 
-第三方拆柜合计
+Third-Party Unstuffing
 THIRD-PARTY UNSTUFFING TOTAL
 
 </div>
@@ -1984,7 +1977,7 @@ THIRD-PARTY UNSTUFFING TOTAL
 
 <div class="label">
 
-ICA / RED SEAL 合计
+ICA / RED SEAL Total
 
 </div>
 
@@ -1994,7 +1987,7 @@ ICA / RED SEAL 合计
 
 <span class="ica-count">
 
-{month_ica} 个柜
+{month_ica} containers
 
 </span>
 
@@ -2042,13 +2035,13 @@ ICA / RED SEAL 合计
 
 <th class="pandanCell">
 
-PANDAN拆柜
+PANDAN Unstuffing
 
 </th>
 
 <th class="totalCell">
 
-总柜量
+Overall Total
 OVERALL TOTAL
 
 </th>
@@ -2067,7 +2060,7 @@ OVERALL TOTAL
 
 <td colspan="2">
 
-总计
+Total
 
 </td>
 
@@ -2106,14 +2099,14 @@ OVERALL TOTAL
 
 
 <!-- ===================================================
-     ICA 项目分布
+     ICA Project分布
      =================================================== -->
 
 <div class="card">
 
 <h3 class="h3">
 
-ICA / RED SEAL 项目分布
+ICA / RED SEAL by Project
 
 </h3>
 
@@ -2125,11 +2118,11 @@ ICA / RED SEAL 项目分布
 <tr>
 
 <th>
-项目
+Project
 </th>
 
 <th>
-柜子数
+Containers
 </th>
 
 </tr>
@@ -2165,7 +2158,7 @@ ICA / RED SEAL 柜号
 
 <div class="small">
 
-本月共
+This month:
 <strong>
 {month_ica}
 </strong>
@@ -2194,21 +2187,21 @@ ICA / RED SEAL 柜号
 
 <h3 class="h3">
 
-第三方 EZBUY 拆柜
+EZBUY Third-Party Unstuffing
 
 </h3>
 
 
 <div class="small">
 
-本月共
+This month:
 <strong>
 {month_third}
 </strong>
-个柜交给 EZBUY 第三方拆柜。
+containers were handled by EZBUY for third-party unstuffing.
 
-这些柜子仍计入清关总柜量及原项目数量，
-但不计入 PANDAN 拆柜数量。
+这些柜子仍计入清关Overall Total及原Project数量，
+but are excluded from PANDAN unstuffing.
 
 </div>
 
@@ -2224,14 +2217,14 @@ ICA / RED SEAL 柜号
 
 
 <!-- ===================================================
-     趋势图
+     Weekly Trend
      =================================================== -->
 
 <div class="card">
 
 <h3 class="h3">
 
-趋势图
+Weekly Trend
 
 </h3>
 
@@ -2241,7 +2234,7 @@ ICA / RED SEAL 柜号
     os,
     ts,
     [
-        f'第{w}周'
+        f'Week {w}'
         for w in active
     ]
 )}
@@ -2257,7 +2250,7 @@ ICA / RED SEAL 柜号
     style="background:#1f6f96"
 ></i>
 
-PANDAN拆柜
+PANDAN Unstuffing
 
 </span>
 
@@ -2269,7 +2262,7 @@ PANDAN拆柜
     style="background:#4f86c6"
 ></i>
 
-总柜量
+Overall Total
 OVERALL TOTAL
 
 </span>
@@ -2282,7 +2275,7 @@ OVERALL TOTAL
     style="background:#2d7a4c"
 ></i>
 
-第三方 EZBUY
+EZBUY Third-Party
 
 </span>
 
@@ -2323,7 +2316,7 @@ OVERALL TOTAL
 
 
 # ============================================================
-# 趋势图
+# Weekly Trend
 # ============================================================
 
 def chart_svg(
@@ -2628,128 +2621,173 @@ fill="#667784"
 
 
 # ============================================================
-# Streamlit 页面
+# Streamlit Page
 # ============================================================
 
 st.set_page_config(
-
-    page_title='Cargo Arrival Report',
-
+    page_title='Cargo Operations Dashboard',
     page_icon='📦',
-
     layout='wide'
-
 )
 
+# Clean landing page: no company/project-specific information is shown
+# until a user uploads a file and generates a report.
+st.markdown(
+    """
+    <style>
+    /* Clean SaaS-style landing page */
+    .stApp {
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 55%);
+    }
+    .block-container {
+        max-width: 1000px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+    }
+    .landing {
+        max-width: 760px;
+        margin: 3.5rem auto 1.8rem auto;
+        text-align: center;
+    }
+    .landing-badge {
+        display: inline-block;
+        padding: 0.35rem 0.8rem;
+        border: 1px solid #d9e2ec;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.85);
+        color: #526579;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        margin-bottom: 1rem;
+    }
+    .landing h1 {
+        font-size: 2.8rem;
+        line-height: 1.15;
+        letter-spacing: -0.04em;
+        margin: 0 0 0.8rem 0;
+        color: #17212b;
+    }
+    .landing p {
+        max-width: 610px;
+        margin: 0 auto;
+        color: #687787;
+        font-size: 1.03rem;
+        line-height: 1.7;
+    }
+    [data-testid="stFileUploader"] {
+        max-width: 760px;
+        margin: 1.2rem auto 0 auto;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        border: 1.5px dashed #b9c8d8 !important;
+        border-radius: 16px !important;
+        background: rgba(255,255,255,0.9) !important;
+        padding: 1.25rem 1rem !important;
+        transition: all 0.2s ease;
+    }
+    [data-testid="stFileUploaderDropzone"]:hover {
+        border-color: #7d93aa !important;
+        background: #ffffff !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button {
+        border-radius: 8px !important;
+    }
+    [data-testid="stFileUploader"] small {
+        color: #8795a3 !important;
+    }
+    div.stButton {
+        max-width: 760px;
+        margin: 0.9rem auto 0 auto;
+    }
+    div.stButton > button {
+        width: 100%;
+        min-height: 2.8rem;
+        border-radius: 10px;
+        font-weight: 600;
+        border: 0;
+    }
+    .landing-footnote {
+        margin-top: 1.2rem;
+        text-align: center;
+        color: #94a0ac;
+        font-size: 0.78rem;
+    }
+    </style>
 
-st.title(
-    '📦 商壹仓库清关拆柜月度报告'
+    <div class="landing">
+        <div class="landing-badge">CARGO OPERATIONS · AUTOMATED REPORTING</div>
+        <h1>📦 Cargo Operations Dashboard</h1>
+        <p>
+            Turn structured cargo data into a clear operations report in a few clicks.
+            Upload an Excel file to get started.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
-
-
-st.caption(
-
-    '云端版：上传 Cargo Arrival (SEA & ROAD).xlsx，'
-    '自动生成拆柜月度报告。'
-
-)
-
 
 file = st.file_uploader(
-
-    '上传 Excel 文件',
-
-    type=['xlsx']
-
+    'Upload Excel File',
+    type=['xlsx'],
+    help='Supported format: .xlsx'
 )
 
-
 if file:
-
     if st.button(
-
-        '生成拆柜报告',
-
+        'Generate Report',
         type='primary'
-
     ):
-
         try:
-
             # ------------------------------------------------
-            # 读取 Excel
+            # Read Excel
             # ------------------------------------------------
 
             df = read_overall(
-
                 file.getvalue()
-
             )
 
-
             # ------------------------------------------------
-            # 分析
+            # Analyze
             # ------------------------------------------------
 
             result = analyze(df)
-
             months = result[-1]
 
-
             # ------------------------------------------------
-            # 生成 HTML
+            # Generate HTML
             # ------------------------------------------------
 
             report = build_html(df)
 
-
             st.success(
-
-                f'生成成功：'
-                f'共发现 {len(months)} 个月的 2026 数据。'
-
+                f'Report generated successfully. '
+                f'{len(months)} month(s) of 2026 data found.'
             )
 
-
             # ------------------------------------------------
-            # 页面显示
+            # Display report
             # ------------------------------------------------
 
             st.components.v1.html(
-
                 report,
-
                 height=1200,
-
                 scrolling=True
-
             )
 
-
             # ------------------------------------------------
-            # 下载 HTML
+            # Download HTML
             # ------------------------------------------------
 
             st.download_button(
-
-                '⬇️ 下载 HTML 报告',
-
-                data=report.encode(
-                    'utf-8'
-                ),
-
-                file_name=
-                    '商壹仓库_月度周报.html',
-
+                '⬇️ Download HTML Report',
+                data=report.encode('utf-8'),
+                file_name='Cargo_Operations_Dashboard.html',
                 mime='text/html'
-
             )
-
 
         except Exception as e:
-
             st.error(
-
-                f'处理失败：{e}'
-
+                f'Processing failed: {e}'
             )
+
