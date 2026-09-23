@@ -2620,6 +2620,465 @@ fill="#667784"
     return ''.join(parts)
 
 
+
+# ============================================================
+# Declarant Monthly Report
+# ============================================================
+
+DECLARANT_PROJECT_ORDER = [
+    'Lazada',
+    'Comone',
+    'Taobao',
+    'Pinduoduo',
+    'Cainiao-COM',
+    'Cainiao-COE',
+    'Road',
+    'Export',
+]
+
+DECLARANT_PROJECT_ALIASES = {
+    'LAZADA': 'Lazada',
+    'LAZADA.COM': 'Lazada',
+    'COMONE': 'Comone',
+    'COMONE_DIRECT': 'Comone',
+    'COMONE_PANDAN': 'Comone',
+    'TAOBAO': 'Taobao',
+    'PDD': 'Pinduoduo',
+    'PINDUODUO': 'Pinduoduo',
+    'CAINIAO-COM': 'Cainiao-COM',
+    'CAINIAO_COM': 'Cainiao-COM',
+    'CAINIAO-COE': 'Cainiao-COE',
+    'CAINIAO_COE': 'Cainiao-COE',
+    'PDD-SPX': 'PDD-SPX',
+    'PDD_SPX': 'PDD-SPX',
+    'ROAD': 'Road',
+    'EXPORT': 'Export',
+}
+
+DECLARANT_COLUMN_ALIASES = {
+    'platform': [
+        'Platform', 'Project', 'Platform Name'
+    ],
+    'noa_done_by': [
+        'NOA Done By', 'NOA Done by', 'NOA Responsible',
+        'NOA By', 'NOA负责人', 'NOA 负责人'
+    ],
+    'loa_done_by': [
+        'LOA Done By', 'LOA Done by', 'LOA Responsible',
+        'LOA By', 'LOA负责人', 'LOA 负责人'
+    ],
+    'done_by': [
+        'Done By', 'Done by', 'Declarant', 'Declarant Name',
+        'Permit Done By', '报关员', '报关员姓名'
+    ],
+    'noa_date': [
+        'NOA Date', 'NOA date', 'NOA Date/Time',
+        'NOA Completed Date', 'NOA Completion Date'
+    ],
+    'loa_date': [
+        'LOA Date', 'LOA date', 'LOA Date/Time',
+        'LOA Completed Date', 'LOA Completion Date'
+    ],
+    'permit_date': [
+        'Permit Date', 'Permit date', 'Permit Date/Time',
+        'Declaration Date', 'Declaration date',
+        'Permit Completed Date', 'Done Date'
+    ],
+    'no_of_permits': [
+        'No. of Permits', 'No of Permits', 'No. of Permit',
+        'Number of Permits', 'Permit Count', 'Permits'
+    ],
+    'ig_number': [
+        'IG number', 'IG Number', 'IG No.', 'IG No', 'IG'
+    ],
+    'permit_no': [
+        'Permit No.', 'Permit No', 'Permit Number', 'Permit No'
+    ],
+}
+
+
+def _find_column(df, key, required=False):
+    aliases = DECLARANT_COLUMN_ALIASES[key]
+    normalized = {
+        re.sub(r'\s+', ' ', str(c).strip()).lower(): c
+        for c in df.columns
+    }
+    for alias in aliases:
+        hit = normalized.get(re.sub(r'\s+', ' ', alias).strip().lower())
+        if hit is not None:
+            return hit
+    if required:
+        raise ValueError(
+            f"Declarant Report is missing a required column for '{key}'. "
+            f"Accepted names include: {', '.join(aliases)}"
+        )
+    return None
+
+
+def _clean_person(v):
+    if pd.isna(v) or v is None:
+        return ''
+    s = str(v).strip()
+    if not s or s.lower() in {'nan', 'none', 'nat'}:
+        return ''
+    return s
+
+
+def _numeric(v):
+    if pd.isna(v) or v is None:
+        return 0
+    if isinstance(v, (int, float)) and not pd.isna(v):
+        return float(v)
+    s = str(v).strip().replace(',', '')
+    if not s:
+        return 0
+    try:
+        return float(s)
+    except Exception:
+        m = re.search(r'-?\d+(?:\.\d+)?', s)
+        return float(m.group()) if m else 0
+
+
+def _has_value(v):
+    return _clean_person(v) != ''
+
+
+def _parse_project(platform):
+    p = _clean_person(platform).upper().replace(' ', '')
+    return DECLARANT_PROJECT_ALIASES.get(p, _clean_person(platform) or 'Unknown')
+
+
+def _date_in_month(v, year=2026):
+    d = parse_date(v)
+    return d if d and d.year == year else None
+
+
+
+def _month_key(v):
+    d = parse_date(v)
+    if not d or d.year < 2026:
+        return None
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+DECLARANT_PERSON_MAP = {
+    'J': 'Jiaqian',
+    'E': 'Eries',
+    'M': 'Marlia',
+    'JIAQIAN': 'Jiaqian',
+    'ERIES': 'Eries',
+    'MARLIA': 'Marlia',
+}
+
+
+def _declarant_name(v):
+    s = _clean_person(v).upper()
+    return DECLARANT_PERSON_MAP.get(s, '')
+
+
+def _effective_overall_date(row):
+    # Declarant Monthly Report: month is based on Gate Out Date.
+    # Only fall back to Unstuffing Date when Gate Out Date is blank.
+    d = parse_date(row.get('Gate Out Date'))
+    if d:
+        return d
+    return parse_date(row.get('Unstuffing Date'))
+
+
+def _overall_project(row):
+    p = _clean_person(row.get('Platform')).upper()
+    ref = _clean_person(row.get('Cainiao B/L Ref/ Other Ref'))
+
+    if p == 'COMONE':
+        return 'Comone' if re.search(r'DIRECT', ref, re.I) else 'Comone'
+    if p == 'LAZADA':
+        return 'Lazada'
+    if p == 'TAOBAO':
+        return 'Taobao'
+    if p == 'PDD':
+        return 'Pinduoduo'
+    if p == 'PDD-SPX':
+        return 'PDD-SPX'
+    if p == 'CAINIAO-COM':
+        return 'Cainiao-COM'
+    if p == 'CAINIAO-COE':
+        return 'Cainiao-COE'
+    return _clean_person(row.get('Platform'))
+
+
+def analyze_declarant(df, road_df=None, export_df=None):
+    """
+    Declarant Monthly Report based on the same Cargo workbook.
+
+    Overall:
+      - month = Unstuffing Date, otherwise Gate Out Date
+      - NOA / LOA = responsible-person initials in Overall columns
+      - Permit = No. of Permits, assigned by Permit/Done-By initials
+
+    Road:
+      - month = Date
+      - count each IG permit record
+      - assigned by Done By
+
+    Export:
+      - month = Date
+      - count each Permit No. record
+      - assigned by Done By
+    """
+    monthly = defaultdict(lambda: {
+        'noa': defaultdict(int),
+        'loa': defaultdict(int),
+        'permit': defaultdict(float),
+        'project': defaultdict(lambda: {
+            'noa': defaultdict(int),
+            'loa': defaultdict(int),
+            'permit': defaultdict(float),
+        })
+    })
+    people_by_month = defaultdict(set)
+
+    def add_noa_loa(month, person, project, metric):
+        if not month or not person:
+            return
+        monthly[month][metric][person] += 1
+        monthly[month]['project'][person][metric][project] += 1
+        people_by_month[month].add(person)
+
+    def add_permit(month, person, project, value):
+        if not month or not person or not value:
+            return
+        monthly[month]['permit'][person] += value
+        monthly[month]['project'][person]['permit'][project] += value
+        people_by_month[month].add(person)
+
+    # ---------------- Overall sheet ----------------
+    required_overall = [
+        'Platform', 'NOA', 'LOA ', 'Permit', 'No. of Permits',
+        'Unstuffing Date', 'Gate Out Date'
+    ]
+    missing = [c for c in required_overall if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "Overall sheet is missing required Declarant Report columns: "
+            + ", ".join(missing)
+        )
+
+    for _, row in df.iterrows():
+        month = _month_key(_effective_overall_date(row))
+        if not month:
+            continue
+
+        project = _overall_project(row)
+
+        noa_person = _declarant_name(row.get('NOA'))
+        loa_person = _declarant_name(row.get('LOA '))
+        permit_person = _declarant_name(row.get('Permit'))
+
+        add_noa_loa(month, noa_person, project, 'noa')
+        add_noa_loa(month, loa_person, project, 'loa')
+
+        permit_count = _numeric(row.get('No. of Permits'))
+        add_permit(month, permit_person, project, permit_count)
+
+    # ---------------- Road sheet ----------------
+    if road_df is not None and not road_df.empty:
+        for _, row in road_df.iterrows():
+            month = _month_key(row.get('Date'))
+            person = _declarant_name(row.get('Done By'))
+            if month and person and _has_value(row.get('Permit')):
+                add_permit(month, person, 'Road', 1)
+
+    # ---------------- Export sheet ----------------
+    if export_df is not None and not export_df.empty:
+        for _, row in export_df.iterrows():
+            month = _month_key(row.get('Date'))
+            person = _declarant_name(row.get('Done By'))
+            if month and person and _has_value(row.get('Permit No.')):
+                add_permit(month, person, 'Export', 1)
+
+    # Clean integer-valued permit totals.
+    for mk, data in monthly.items():
+        for person, value in list(data['permit'].items()):
+            if float(value).is_integer():
+                data['permit'][person] = int(value)
+        for person in data['project']:
+            for project, value in list(data['project'][person]['permit'].items()):
+                if float(value).is_integer():
+                    data['project'][person]['permit'][project] = int(value)
+
+    months = sorted(
+        [m for m in monthly if m >= '2026-01'],
+        reverse=True
+    )
+
+    return monthly, people_by_month, months, {}
+
+
+
+
+def _project_sort_key(project):
+    if project in DECLARANT_PROJECT_ORDER:
+        return (0, DECLARANT_PROJECT_ORDER.index(project))
+    return (1, project.lower())
+
+def build_declarant_html(df, road_df=None, export_df=None):
+    monthly, people_by_month, months, cols = analyze_declarant(df, road_df, export_df)
+
+    if not months:
+        raise ValueError("No January 2026 onward declarant activity was found.")
+
+    out = ["""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Declarant Monthly Report</title>
+<style>
+body{margin:0;padding:24px;font-family:'Segoe UI','Microsoft YaHei',sans-serif;
+background:#f3f8fd;color:#1f2b34}
+.wrap{max-width:1450px;margin:0 auto}
+.hero,.month{background:#fff;border:1px solid #d8e6f3;border-radius:18px;
+padding:18px;box-shadow:0 10px 20px rgba(54,98,145,.08);margin-bottom:16px}
+.hero h1{margin:0 0 8px;font-size:30px}
+.hero p{margin:0;color:#5e7083;font-size:14px;line-height:1.7}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+.metric{border:1px solid #dbe8f4;border-radius:12px;padding:12px;background:#f8fbff}
+.metric .label{font-size:12px;color:#5f7182}
+.metric .value{font-size:24px;font-weight:700;color:#153a5b;margin-top:4px}
+.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+.card{background:#fff;border:1px solid #dbe8f4;border-radius:12px;padding:12px}
+.card h3{margin:0 0 8px;font-size:16px}
+.personBlocks{display:grid;gap:12px}
+.personBlock{border:1px solid #dbe8f4;border-radius:12px;background:#fbfdff;overflow:hidden}
+.personTitle{padding:9px 11px;background:#eef6ff;color:#173d5f;font-weight:800;
+border-bottom:1px solid #dbe8f4}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #cfddea;padding:8px 9px;text-align:center;font-size:13px}
+th{background:#eaf4ff;color:#173d5f}
+.total td{font-weight:800;background:#eef6ff}
+.person{text-align:left;font-weight:700}
+.num{font-variant-numeric:tabular-nums}
+.pct{color:#48657c;min-width:85px}
+.bar{height:7px;background:#e7eef6;border-radius:999px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:#2d7a4c}
+.tag{display:inline-block;border-radius:999px;background:#eef6ff;border:1px solid #d4e5f6;
+padding:3px 8px;font-size:12px;color:#315c7c}
+.note{font-size:12px;color:#607386;margin-top:8px;line-height:1.6}
+@media(max-width:980px){.cards,.grid{grid-template-columns:1fr}body{padding:14px}}
+</style></head><body><div class="wrap">
+<section class="hero">
+<h1>Declarant Monthly Report</h1>
+<p>
+从 January 2026 开始统计。NOA / LOA 按对应列中的负责人记录计数；
+Overall Permit 按 <strong>No. of Permits</strong> 汇总；
+Road 只按 <strong>IG number</strong> 计数，Export 按 <strong>Permit No.</strong> 计数，
+并都按 <strong>Done By</strong> 列归属报关员。
+</p>
+</section>
+"""]
+
+    for mk in months:
+        y, m = map(int, mk.split('-'))
+        data = monthly[mk]
+        people = sorted(people_by_month[mk], key=lambda x: x.lower())
+
+        noa_total = sum(data['noa'].values())
+        loa_total = sum(data['loa'].values())
+        permit_total = sum(data['permit'].values())
+
+        out.append(f"""
+<section class="month">
+<h2>{datetime(y,m,1).strftime('%B %Y')}</h2>
+<div class="cards">
+<div class="metric"><div class="label">NOA Total</div><div class="value">{noa_total}</div></div>
+<div class="metric"><div class="label">LOA Total</div><div class="value">{loa_total}</div></div>
+<div class="metric"><div class="label">Permit Total</div><div class="value">{permit_total:g}</div></div>
+</div>
+
+<div class="grid">
+<div class="card">
+<h3>每人工作用量与占比</h3>
+<table><thead><tr>
+<th>报关员</th><th>NOA 数量</th><th>NOA 占比</th>
+<th>LOA 数量</th><th>LOA 占比</th>
+<th>Permit 数量</th><th>Permit 占比</th>
+</tr></thead><tbody>
+""")
+
+        for person in people:
+            noa = data['noa'].get(person, 0)
+            loa = data['loa'].get(person, 0)
+            permit = data['permit'].get(person, 0)
+            noa_pct = noa / noa_total * 100 if noa_total else 0
+            loa_pct = loa / loa_total * 100 if loa_total else 0
+            permit_pct = permit / permit_total * 100 if permit_total else 0
+
+            out.append(f"""
+<tr>
+<td class="person">{html.escape(person)}</td>
+<td class="num">{noa}</td>
+<td class="pct">{noa_pct:.1f}%<div class="bar"><i style="width:{noa_pct:.1f}%"></i></div></td>
+<td class="num">{loa}</td>
+<td class="pct">{loa_pct:.1f}%<div class="bar"><i style="width:{loa_pct:.1f}%"></i></div></td>
+<td class="num">{permit:g}</td>
+<td class="pct">{permit_pct:.1f}%<div class="bar"><i style="width:{permit_pct:.1f}%"></i></div></td>
+</tr>
+""")
+
+        out.append(f"""
+<tr class="total">
+<td class="person">本月合计</td>
+<td>{noa_total}</td><td>100.0%</td>
+<td>{loa_total}</td><td>100.0%</td>
+<td>{permit_total:g}</td><td>100.0%</td>
+</tr>
+</tbody></table>
+</div>
+
+<div class="card">
+<h3>项目明细</h3>
+<div class="personBlocks">
+""")
+
+        for person in people:
+            pdata = data['project'][person]
+            projects = set(pdata['noa']) | set(pdata['loa']) | set(pdata['permit'])
+            projects = sorted(projects, key=_project_sort_key)
+
+            out.append(f"""
+<div class="personBlock">
+<div class="personTitle">{html.escape(person)}</div>
+<table><thead><tr><th>项目</th><th>NOA</th><th>LOA</th><th>Permit</th></tr></thead><tbody>
+""")
+            for project in projects:
+                out.append(f"""
+<tr>
+<td class="person"><span class="tag">{html.escape(project)}</span></td>
+<td class="num">{pdata['noa'].get(project,0)}</td>
+<td class="num">{pdata['loa'].get(project,0)}</td>
+<td class="num">{pdata['permit'].get(project,0):g}</td>
+</tr>
+""")
+            out.append("</tbody></table></div>")
+
+        out.append("""
+</div>
+<div class="note">
+基础项目顺序：Lazada、Comone、Taobao、Pinduoduo、Cainiao-COM、Cainiao-COE、Road、Export；
+新 Platform 项目会自动追加并单独显示。
+</div>
+</div>
+</div>
+</section>
+""")
+
+    out.append("""
+</div></body></html>
+""")
+    return ''.join(out)
+
+
 # ============================================================
 # Streamlit Page
 # ============================================================
@@ -2630,17 +3089,14 @@ st.set_page_config(
     layout='wide'
 )
 
-# Clean landing page: no company/project-specific information is shown
-# until a user uploads a file and generates a report.
 st.markdown(
     """
     <style>
-    /* Clean SaaS-style landing page */
     .stApp {
         background: linear-gradient(180deg, #f8fafc 0%, #ffffff 55%);
     }
     .block-container {
-        max-width: 1000px;
+        max-width: 1100px;
         padding-top: 2rem;
         padding-bottom: 4rem;
     }
@@ -2669,7 +3125,7 @@ st.markdown(
         color: #17212b;
     }
     .landing p {
-        max-width: 610px;
+        max-width: 650px;
         margin: 0 auto;
         color: #687787;
         font-size: 1.03rem;
@@ -2684,17 +3140,6 @@ st.markdown(
         border-radius: 16px !important;
         background: rgba(255,255,255,0.9) !important;
         padding: 1.25rem 1rem !important;
-        transition: all 0.2s ease;
-    }
-    [data-testid="stFileUploaderDropzone"]:hover {
-        border-color: #7d93aa !important;
-        background: #ffffff !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button {
-        border-radius: 8px !important;
-    }
-    [data-testid="stFileUploader"] small {
-        color: #8795a3 !important;
     }
     div.stButton {
         max-width: 760px;
@@ -2707,20 +3152,13 @@ st.markdown(
         font-weight: 600;
         border: 0;
     }
-    .landing-footnote {
-        margin-top: 1.2rem;
-        text-align: center;
-        color: #94a0ac;
-        font-size: 0.78rem;
-    }
     </style>
-
     <div class="landing">
         <div class="landing-badge">CARGO OPERATIONS · AUTOMATED REPORTING</div>
         <h1>📦 Cargo Operations Dashboard</h1>
         <p>
-            Turn structured cargo data into a clear operations report in a few clicks.
-            Upload an Excel file to get started.
+            Turn structured cargo data into clear operations and declarant reports
+            in a few clicks. Upload one Excel file to get started.
         </p>
     </div>
     """,
@@ -2734,60 +3172,62 @@ file = st.file_uploader(
 )
 
 if file:
-    if st.button(
-        'Generate Report',
-        type='primary'
-    ):
+    if st.button('Generate Reports', type='primary'):
         try:
-            # ------------------------------------------------
-            # Read Excel
-            # ------------------------------------------------
+            file_bytes = file.getvalue()
+            df = read_overall(file_bytes)
+            road_df = pd.read_excel(io.BytesIO(file_bytes), sheet_name='Road')
+            export_df = pd.read_excel(io.BytesIO(file_bytes), sheet_name='Export')
 
-            df = read_overall(
-                file.getvalue()
-            )
+            # Existing Cargo Operations Report
+            cargo_result = analyze(df)
+            cargo_months = cargo_result[-1]
+            cargo_report = build_html(df)
 
-            # ------------------------------------------------
-            # Analyze
-            # ------------------------------------------------
-
-            result = analyze(df)
-            months = result[-1]
-
-            # ------------------------------------------------
-            # Generate HTML
-            # ------------------------------------------------
-
-            report = build_html(df)
+            # New Declarant Monthly Report
+            declarant_report = build_declarant_html(df, road_df, export_df)
+            declarant_result = analyze_declarant(df, road_df, export_df)
+            declarant_months = declarant_result[2]
 
             st.success(
-                f'Report generated successfully. '
-                f'{len(months)} month(s) of 2026 data found.'
+                f"Reports generated successfully. "
+                f"Cargo: {len(cargo_months)} month(s); "
+                f"Declarant: {len(declarant_months)} month(s) from Jan 2026 onward."
             )
 
-            # ------------------------------------------------
-            # Display report
-            # ------------------------------------------------
+            tab1, tab2 = st.tabs([
+                '📦 Cargo Operations Report',
+                '🛃 Declarant Monthly Report'
+            ])
 
-            st.components.v1.html(
-                report,
-                height=1200,
-                scrolling=True
-            )
+            with tab1:
+                st.components.v1.html(
+                    cargo_report,
+                    height=1200,
+                    scrolling=True
+                )
+                st.download_button(
+                    '⬇️ Download Cargo Operations HTML',
+                    data=cargo_report.encode('utf-8'),
+                    file_name='Cargo_Operations_Dashboard.html',
+                    mime='text/html',
+                    key='download_cargo'
+                )
 
-            # ------------------------------------------------
-            # Download HTML
-            # ------------------------------------------------
-
-            st.download_button(
-                '⬇️ Download HTML Report',
-                data=report.encode('utf-8'),
-                file_name='Cargo_Operations_Dashboard.html',
-                mime='text/html'
-            )
+            with tab2:
+                st.components.v1.html(
+                    declarant_report,
+                    height=1200,
+                    scrolling=True
+                )
+                st.download_button(
+                    '⬇️ Download Declarant Monthly HTML',
+                    data=declarant_report.encode('utf-8'),
+                    file_name='Declarant_Monthly_Report.html',
+                    mime='text/html',
+                    key='download_declarant'
+                )
 
         except Exception as e:
-            st.error(
-                f'Processing failed: {e}'
-            )
+            st.error(f'Processing failed: {e}')
 
