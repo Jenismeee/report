@@ -2786,9 +2786,13 @@ def _declarant_name(v):
     if s in DECLARANT_PERSON_MAP:
         return DECLARANT_PERSON_MAP[s]
 
-    # Values such as "E + DRAFTED", "J+DRAFT", "M/DRAFTING".
-    # Only treat DRAFT / DRAFTED / DRAFTING as the suffix.
-    m = re.match(r'^\s*([EJM])\s*(?:[+\-/]\s*)?(?:DRAFTED|DRAFTING|DRAFT)\s*$', s)
+    # Any value whose first meaningful character is E/J/M belongs to
+    # that declarant. This intentionally covers values such as:
+    # E, J, M
+    # E + DRAFTED, J DRAFT, M/DRAFTING
+    # E DRAFTED, J + DRAFT, M anything
+    # The business rule is: the leading E/J/M is the source of truth.
+    m = re.match(r'^\s*([EJM])(?:\s|$|[+\-/])', s)
     if m:
         return DECLARANT_PERSON_MAP[m.group(1)]
 
@@ -2830,7 +2834,7 @@ def analyze_declarant(df, road_df=None, export_df=None):
     Declarant Monthly Report based on the same Cargo workbook.
 
     Overall:
-      - month = Unstuffing Date, otherwise Gate Out Date
+      - month = Gate Out Date, otherwise Unstuffing Date
       - NOA / LOA = responsible-person initials in Overall columns
       - Permit = No. of Permits, assigned by Permit/Done-By initials
 
