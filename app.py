@@ -2772,8 +2772,27 @@ DECLARANT_PERSON_MAP = {
 
 
 def _declarant_name(v):
+    """Map declarant values to the three standard names.
+
+    Accept both the plain initials (E/J/M) and values such as:
+    E + DRAFTED, J + DRAFT, M + DRAFTING, E/DRAFTED, etc.
+    The leading E/J/M is the source of truth for assignment.
+    """
     s = _clean_person(v).upper()
-    return DECLARANT_PERSON_MAP.get(s, '')
+    if not s:
+        return ''
+
+    # Plain names / initials.
+    if s in DECLARANT_PERSON_MAP:
+        return DECLARANT_PERSON_MAP[s]
+
+    # Values such as "E + DRAFTED", "J+DRAFT", "M/DRAFTING".
+    # Only treat DRAFT / DRAFTED / DRAFTING as the suffix.
+    m = re.match(r'^\s*([EJM])\s*(?:[+\-/]\s*)?(?:DRAFTED|DRAFTING|DRAFT)\s*$', s)
+    if m:
+        return DECLARANT_PERSON_MAP[m.group(1)]
+
+    return ''
 
 
 def _effective_overall_date(row):
@@ -3230,4 +3249,3 @@ if file:
 
         except Exception as e:
             st.error(f'Processing failed: {e}')
-
