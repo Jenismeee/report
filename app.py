@@ -600,11 +600,26 @@ def monthly_metrics(mk, pw, tw):
 
 def format_pct_change(current, previous):
     if previous in (None, 0):
-        return '—'
+        return {'text': '—', 'class': 'flat'}
+
     change = (current - previous) / previous * 100
+
     if change > 0:
-        return f'+{change:.1f}%'
-    return f'{change:.1f}%'
+        return {
+            'text': f'↑ +{change:.1f}%',
+            'class': 'up'
+        }
+
+    if change < 0:
+        return {
+            'text': f'↓ {change:.1f}%',
+            'class': 'down'
+        }
+
+    return {
+        'text': '→ 0.0%',
+        'class': 'flat'
+    }
 
 
 # ============================================================
@@ -1146,10 +1161,36 @@ th{
 .mom-label{font-size:12px;color:#5f7182}
 .mom-main{display:flex;align-items:baseline;gap:10px;margin-top:3px}
 .mom-main > span:first-child{font-size:23px;font-weight:700;color:#153a5b}
-.mom-change{font-size:14px;font-weight:700;color:#315f7d}
+.mom-change{font-size:14px;font-weight:700}
+.mom-change.up{color:#16834a}
+.mom-change.down{color:#c0392b}
+.mom-change.flat{color:#71808f}
 .mom-detail{margin-top:3px;font-size:11px;color:#7a8997}
 
+/* YTD / annual overview */
+.ytd-section{margin-top:18px;padding:18px;border:1px solid #d8e6f3;border-radius:18px;background:#fff;box-shadow:0 10px 20px rgba(31,70,100,.06)}
+.ytd-header{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap}
+.ytd-title{font-size:18px;font-weight:800;color:#153a5b;margin:0}
+.ytd-subtitle{font-size:11px;color:#71808f;margin-top:4px}
+.ytd-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.ytd-kpi{padding:14px 16px;border:1px solid #dbe8f4;border-radius:12px;background:#f8fbff}
+.ytd-kpi-label{font-size:11px;color:#627485;text-transform:uppercase;letter-spacing:.04em}
+.ytd-kpi-value{font-size:30px;font-weight:800;color:#153a5b;margin-top:4px}
+.ytd-kpi-note{font-size:11px;color:#7a8997;margin-top:2px}
+.ytd-table-wrap{overflow-x:auto;margin-top:14px}
+.ytd-table{width:100%;border-collapse:collapse;min-width:850px}
+.ytd-table th,.ytd-table td{padding:8px 9px;border-bottom:1px solid #e6eef5;text-align:right;font-size:11px;white-space:nowrap}
+.ytd-table th:first-child,.ytd-table td:first-child{text-align:left}
+.ytd-table th{background:#f4f8fb;color:#5f7182;font-weight:700}
+.ytd-table td{color:#33495b}
+.ytd-table .pandan-col{background:#f7fbf8;font-weight:700}
+.ytd-table .total-col{background:#f4f8fc;font-weight:800;color:#153a5b}
+.ytd-table .current-row td{background:#eef6fc;font-weight:700}
+.ytd-table .ytd-row td{border-top:2px solid #cbddea;background:#f8fbff;font-weight:800;color:#153a5b}
+.ytd-table .month-label{font-weight:700;color:#294b68}
+.section-title{font-size:15px;font-weight:800;color:#294b68;margin:0}
 @media (max-width:1180px){
+
 
     .grid{
 
@@ -1255,6 +1296,124 @@ the container is automatically classified as an ICA container.
 
 </section>
 
+'''
+    )
+
+
+    # ========================================================
+    # 2026 YTD Overview + Monthly Project Trend
+    # ========================================================
+
+    report_year = 2026
+    year_months = [mk for mk in months if mk.startswith(f"{report_year}-")]
+
+    annual_project_totals = {p: 0 for p in PROJECT_ORDER}
+    annual_month_rows = []
+    annual_pandan_total = 0
+    annual_overall_total = 0
+
+    for ym in sorted(year_months):
+        monthly_project_counts = {}
+        for p in PROJECT_ORDER:
+            c = sum(len(pw.get((ym, w, p), set())) for w in range(1, 6))
+            monthly_project_counts[p] = c
+            annual_project_totals[p] += c
+
+        pandan_value, overall_value = monthly_summary[ym]
+        annual_pandan_total += pandan_value
+        annual_overall_total += overall_value
+        annual_month_rows.append((ym, monthly_project_counts, pandan_value, overall_value))
+
+    latest_year_month = year_months[-1] if year_months else None
+    latest_label = (
+        pd.Timestamp(f"{latest_year_month}-01").strftime('%b %Y')
+        if latest_year_month else 'No data'
+    )
+
+    annual_headers = ''.join(
+        '<th class="%s">%s</th>' % (
+            'pandan-col' if p == 'COMONE_PANDAN' else '',
+            html.escape(DISPLAY[p])
+        )
+        for p in PROJECT_ORDER
+    )
+
+    annual_rows_html = []
+    for ym, project_counts, pandan_value, overall_value in annual_month_rows:
+        month_label = pd.Timestamp(f"{ym}-01").strftime('%b')
+        current_cls = ' class="current-row"' if ym == latest_year_month else ''
+        project_cells = ''.join(
+            '<td class="%s">%s</td>' % (
+                'pandan-col' if p == 'COMONE_PANDAN' else '',
+                project_counts[p]
+            )
+            for p in PROJECT_ORDER
+        )
+        annual_rows_html.append(
+            f'<tr{current_cls}><td class="month-label">{month_label}</td>'
+            f'{project_cells}'
+            f'<td class="pandan-col">{pandan_value}</td>'
+            f'<td class="total-col">{overall_value}</td></tr>'
+        )
+
+    annual_ytd_cells = ''.join(
+        '<td class="%s">%s</td>' % (
+            'pandan-col' if p == 'COMONE_PANDAN' else '',
+            annual_project_totals[p]
+        )
+        for p in PROJECT_ORDER
+    )
+
+    out.append(
+        f'''
+<section class="ytd-section">
+    <div class="ytd-header">
+        <div>
+            <div class="ytd-title">2026 YTD Overview</div>
+            <div class="ytd-subtitle">January 2026 to {latest_label} · Based on Unstuffing Date, with Gate Out Date as fallback</div>
+        </div>
+    </div>
+
+    <div class="ytd-kpis">
+        <div class="ytd-kpi">
+            <div class="ytd-kpi-label">PANDAN Unstuffing</div>
+            <div class="ytd-kpi-value">{annual_pandan_total:,}</div>
+            <div class="ytd-kpi-note">containers YTD</div>
+        </div>
+        <div class="ytd-kpi">
+            <div class="ytd-kpi-label">Overall Containers</div>
+            <div class="ytd-kpi-value">{annual_overall_total:,}</div>
+            <div class="ytd-kpi-note">containers YTD</div>
+        </div>
+    </div>
+
+    <div style="margin-top:18px">
+        <div class="section-title">2026 Monthly Trend</div>
+        <div class="ytd-subtitle">Monthly container volume by project, plus PANDAN unstuffing and overall total.</div>
+    </div>
+
+    <div class="ytd-table-wrap">
+        <table class="ytd-table">
+            <thead>
+                <tr>
+                    <th>Month</th>
+                    {annual_headers}
+                    <th class="pandan-col">PANDAN</th>
+                    <th class="total-col">Overall</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(annual_rows_html)}
+                <tr class="ytd-row">
+                    <td>YTD</td>
+                    {annual_ytd_cells}
+                    <td class="pandan-col">{annual_pandan_total}</td>
+                    <td class="total-col">{annual_overall_total}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
 '''
     )
 
@@ -1980,7 +2139,6 @@ Review customs clearance, unstuffing, third-party handling, and ICA / RED SEAL a
 <div class="label">
 
 PANDAN Unstuffing
-PANDAN UNSTUFFING TOTAL
 
 </div>
 
@@ -2060,12 +2218,12 @@ ICA / RED SEAL Total
 <div class="mom-grid">
 <div class="mom-card">
 <div class="mom-label">PANDAN Unstuffing</div>
-<div class="mom-main"><span>{month_pandan}</span><span class="mom-change">{pandan_change}</span></div>
+<div class="mom-main"><span>{month_pandan}</span><span class="mom-change {pandan_change['class']}">{pandan_change['text']}</span></div>
 <div class="mom-detail">Previous month: {previous_pandan if previous_pandan is not None else 'No data'}</div>
 </div>
 <div class="mom-card">
 <div class="mom-label">Overall Containers</div>
-<div class="mom-main"><span>{month_overall}</span><span class="mom-change">{overall_change}</span></div>
+<div class="mom-main"><span>{month_overall}</span><span class="mom-change {overall_change['class']}">{overall_change['text']}</span></div>
 <div class="mom-detail">Previous month: {previous_overall if previous_overall is not None else 'No data'}</div>
 </div>
 </div>
@@ -2113,8 +2271,7 @@ PANDAN Unstuffing
 
 <th class="totalCell">
 
-Overall Total
-OVERALL TOTAL
+Overall Containers
 
 </th>
 
@@ -2334,8 +2491,7 @@ PANDAN Unstuffing
     style="background:#4f86c6"
 ></i>
 
-Overall Total
-OVERALL TOTAL
+Overall Containers
 
 </span>
 
