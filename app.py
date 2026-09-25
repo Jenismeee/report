@@ -581,6 +581,33 @@ def analyze(df):
 
 
 # ============================================================
+# 月度指标 / 环比
+# ============================================================
+
+def monthly_metrics(mk, pw, tw):
+    month_pandan = 0
+    month_overall = 0
+    for w in range(1, 6):
+        counts = {p: len(pw.get((mk, w, p), set())) for p in PROJECT_ORDER}
+        third_containers = tw.get((mk, w, 'EZBUY'), set())
+        pandan_containers = set()
+        for p in PANDAN_PROJECTS:
+            pandan_containers.update(pw.get((mk, w, p), set()))
+        pandan_containers -= third_containers
+        month_pandan += len(pandan_containers)
+        month_overall += sum(counts.values())
+    return month_pandan, month_overall
+
+def format_pct_change(current, previous):
+    if previous in (None, 0):
+        return '—'
+    change = (current - previous) / previous * 100
+    if change > 0:
+        return f'+{change:.1f}%'
+    return f'{change:.1f}%'
+
+
+# ============================================================
 # HTML 报告
 # ============================================================
 
@@ -608,6 +635,11 @@ def build_html(df):
 
 
     out = []
+
+    monthly_summary = {
+        mk: monthly_metrics(mk, pw, tw)
+        for mk in months
+    }
 
 
     out.append(
@@ -1106,6 +1138,17 @@ th{
 }
 
 
+ .mom{margin-top:12px;padding:12px;border:1px solid #dbe8f4;border-radius:12px;background:#f8fbff}
+.mom-title{font-size:14px;font-weight:700;color:#294b68}
+.mom-subtitle{margin-top:3px;font-size:11px;color:#6a7b8b}
+.mom-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:9px}
+.mom-card{padding:10px 12px;border:1px solid #dbe8f4;border-radius:10px;background:#fff}
+.mom-label{font-size:12px;color:#5f7182}
+.mom-main{display:flex;align-items:baseline;gap:10px;margin-top:3px}
+.mom-main > span:first-child{font-size:23px;font-weight:700;color:#153a5b}
+.mom-change{font-size:14px;font-weight:700;color:#315f7d}
+.mom-detail{margin-top:3px;font-size:11px;color:#7a8997}
+
 @media (max-width:1180px){
 
     .grid{
@@ -1120,6 +1163,10 @@ th{
         grid-template-columns:
             repeat(2,minmax(0,1fr));
 
+    }
+
+    .mom-grid{
+        grid-template-columns:1fr;
     }
 
 
@@ -1281,9 +1328,20 @@ the container is automatically classified as an ICA container.
         # 月度变量
         # ----------------------------------------------------
 
-        month_pandan = 0
+        month_pandan, month_overall = monthly_summary[mk]
 
-        month_overall = 0
+        current_month = pd.Timestamp(year=y, month=m, day=1)
+        previous_month_date = current_month - pd.DateOffset(months=1)
+        previous_mk = previous_month_date.strftime('%Y-%m')
+        previous_metrics = monthly_summary.get(previous_mk)
+        previous_pandan = previous_metrics[0] if previous_metrics else None
+        previous_overall = previous_metrics[1] if previous_metrics else None
+        pandan_change = format_pct_change(month_pandan, previous_pandan)
+        overall_change = format_pct_change(month_overall, previous_overall)
+        previous_label = (
+            f'{previous_month_date.year}年{previous_month_date.month}月'
+            if previous_metrics else 'No previous-month data'
+        )
 
         month_third = len(
 
@@ -1451,9 +1509,7 @@ the container is automatically classified as an ICA container.
             )
 
 
-            month_pandan += pandan
-
-            month_overall += overall
+            # 月度指标已预先计算，用于保持环比与月度Total一致。
 
 
             # ------------------------------------------------
@@ -1998,6 +2054,22 @@ ICA / RED SEAL Total
 
 </div>
 
+<div class="mom">
+<div class="mom-title">Month-over-Month Comparison</div>
+<div class="mom-subtitle">Compared with {previous_label}</div>
+<div class="mom-grid">
+<div class="mom-card">
+<div class="mom-label">PANDAN Unstuffing</div>
+<div class="mom-main"><span>{month_pandan}</span><span class="mom-change">{pandan_change}</span></div>
+<div class="mom-detail">Previous month: {previous_pandan if previous_pandan is not None else 'No data'}</div>
+</div>
+<div class="mom-card">
+<div class="mom-label">Overall Containers</div>
+<div class="mom-main"><span>{month_overall}</span><span class="mom-change">{overall_change}</span></div>
+<div class="mom-detail">Previous month: {previous_overall if previous_overall is not None else 'No data'}</div>
+</div>
+</div>
+</div>
 
 <div class="grid">
 
