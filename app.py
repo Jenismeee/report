@@ -124,17 +124,23 @@ def parse_date(v):
 # Project判断
 # ============================================================
 
+def normalize_project_text(value):
+    """Normalize platform/reference text so COE is not lost because of
+    whitespace, non-breaking spaces, or different dash characters."""
+    if value is None or pd.isna(value):
+        return ''
+    text = str(value).replace('\u00a0', ' ').strip().upper()
+    # Normalize common Unicode dash variants to ASCII hyphen.
+    for dash in ('–', '—', '‑', '﹘', '﹣', '－'):
+        text = text.replace(dash, '-')
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+
 def project_key(platform, ref):
 
-    p = str(
-        platform
-    ).strip().upper()
-
-    r = (
-        str(ref)
-        if not pd.isna(ref)
-        else ''
-    )
+    p = normalize_project_text(platform)
+    r = normalize_project_text(ref)
 
 
     # --------------------------------------------------------
@@ -170,29 +176,30 @@ def project_key(platform, ref):
 
 
     # --------------------------------------------------------
+    # Cainiao：优先根据 Platform 判断；如果 Platform 是泛化的
+    # CAINIAO，再从 Ref 中兜底识别 COM / COE。
+    # --------------------------------------------------------
+
+    if p in {'CAINIAO-COM', 'CAINIAO_COM', 'CAINIAO COM'}:
+        return 'CAINIAO_COM'
+
+    if p in {'CAINIAO-COE', 'CAINIAO_COE', 'CAINIAO COE'}:
+        return 'CAINIAO_COE'
+
+    if p in {'CAINIAO', 'CAINIAO.COM', 'CAINIAO/COE', 'CAINIAO/COM'}:
+        if re.search(r'\bCOE\b', r):
+            return 'CAINIAO_COE'
+        if re.search(r'\bCOM\b', r):
+            return 'CAINIAO_COM'
+
+    # --------------------------------------------------------
     # 普通Project
     # --------------------------------------------------------
 
     mapping = {
-
-        'LAZADA':
-            'LAZADA',
-
-        'TAOBAO':
-            'TAOBAO',
-
-        'PDD':
-            'PDD',
-
-        'CAINIAO-COM':
-            'CAINIAO_COM',
-
-        'CAINIAO-COE':
-            'CAINIAO_COE',
-
-        'CAINIAO_COE':
-            'CAINIAO_COE'
-
+        'LAZADA': 'LAZADA',
+        'TAOBAO': 'TAOBAO',
+        'PDD': 'PDD',
     }
 
     return mapping.get(p)
@@ -629,6 +636,30 @@ def format_pct_change(current, previous):
         'text': '→ 0.0%',
         'class': 'flat'
     }
+
+
+# ============================================================
+# COE 数据校验
+# ============================================================
+
+def coe_validation(df):
+    """Return raw vs recognized Cainiao-COE counts for troubleshooting."""
+    if 'Platform' not in df.columns:
+        return 0, 0
+
+    raw_mask = df['Platform'].apply(
+        lambda v: normalize_project_text(v) in {
+            'CAINIAO-COE', 'CAINIAO_COE', 'CAINIAO COE'
+        }
+    )
+    raw_count = int(raw_mask.sum())
+
+    recognized = 0
+    for _, row in df.loc[raw_mask].iterrows():
+        if project_key(row.get('Platform', ''), row.get('Cainiao B/L Ref/ Other Ref', '')) == 'CAINIAO_COE':
+            recognized += 1
+
+    return raw_count, recognized
 
 
 # ============================================================
@@ -1307,6 +1338,20 @@ the container is automatically classified as an ICA container.
 
 '''
     )
+
+    # --------------------------------------------------------
+    # Silent-failure guard: if the source contains COE rows but
+    # none are recognized, show a clear warning instead of
+    # silently producing a report without the COE column data.
+    # --------------------------------------------------------
+    raw_coe, recognized_coe = coe_validation(df)
+    if raw_coe and recognized_coe == 0:
+        out.append(f'''
+<section class="month" style="border-color:#f0c36d;background:#fffaf0">
+<div style="font-weight:700;color:#7a5b13">⚠ Cainiao-COE data check</div>
+<div class="small" style="margin-top:5px">The uploaded Excel contains {raw_coe} CAINIAO-COE row(s), but none were recognized. Please check the Platform / reference values.</div>
+</section>
+''')
 
 
     # ========================================================
@@ -3373,6 +3418,7 @@ if file:
             # Existing Cargo Operations Report
             cargo_result = analyze(df)
             cargo_months = cargo_result[-1]
+            raw_coe, recognized_coe = coe_validation(df)
             cargo_report = build_html(df)
 
             # New Declarant Monthly Report
@@ -3380,11 +3426,16 @@ if file:
             declarant_result = analyze_declarant(df, road_df, export_df)
             declarant_months = declarant_result[2]
 
-            st.success(
-                f"Reports generated successfully. "
-                f"Cargo: {len(cargo_months)} month(s); "
-                f"Declarant: {len(declarant_months)} month(s) from Jan 2026 onward."
-            )
+            if raw_coe and recognized_coe == 0:
+                st.error(
+                    f"Cainiao-COE check failed: the Excel contains {raw_coe} COE row(s), but 0 were recognized."
+                )
+            else:
+                st.success(
+                    f"Reports generated successfully. Cargo: {len(cargo_months)} month(s); "
+                    f"Declarant: {len(declarant_months)} month(s) from Jan 2026 onward; "
+                    f"Cainiao-COE rows recognized: {recognized_coe}."
+                )
 
             tab1, tab2 = st.tabs([
                 '📦 Cargo Operations Report',
