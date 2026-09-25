@@ -12,7 +12,8 @@ import streamlit as st
 # Project设置
 # ============================================================
 
-# CAINIAO-COE 已删除
+# Cainiao-COE is tracked as a separate project.
+# It is included in project/monthly totals but excluded from PANDAN.
 PROJECT_ORDER = [
     'LAZADA',
     'COMONE_DIRECT',
@@ -20,7 +21,8 @@ PROJECT_ORDER = [
     'TAOBAO',
     'PDD',
     'PDD_SPX',
-    'CAINIAO_COM'
+    'CAINIAO_COM',
+    'CAINIAO_COE'
 ]
 
 
@@ -46,7 +48,8 @@ DISPLAY = {
     'TAOBAO': 'TAOBAO',
     'PDD': 'PDD',
     'PDD_SPX': 'PDD-SPX',
-    'CAINIAO_COM': 'CAINIAO-COM'
+    'CAINIAO_COM': 'CAINIAO-COM',
+    'CAINIAO_COE': 'CAINIAO-COE'
 }
 
 
@@ -182,7 +185,13 @@ def project_key(platform, ref):
             'PDD',
 
         'CAINIAO-COM':
-            'CAINIAO_COM'
+            'CAINIAO_COM',
+
+        'CAINIAO-COE':
+            'CAINIAO_COE',
+
+        'CAINIAO_COE':
+            'CAINIAO_COE'
 
     }
 
@@ -1273,9 +1282,9 @@ for monthly and weekly classification.
 <strong>PANDAN unstuffing rule:</strong>
 
 Projects handled by the PANDAN warehouse include
-COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。
+COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。CAINIAO-COE is tracked separately and is excluded from PANDAN.
 
-LAZADA, COMONE Direct, and PDD-SPX
+LAZADA, COMONE Direct, PDD-SPX, and CAINIAO-COE
 are excluded from PANDAN.
 
 If the Remarks For Container field contains
