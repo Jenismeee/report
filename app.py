@@ -1168,15 +1168,15 @@ th{
 .mom-detail{margin-top:3px;font-size:11px;color:#7a8997}
 
 /* YTD / annual overview */
-.ytd-section{margin-top:18px;padding:18px;border:1px solid #d8e6f3;border-radius:18px;background:#fff;box-shadow:0 10px 20px rgba(31,70,100,.06)}
-.ytd-header{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap}
-.ytd-title{font-size:18px;font-weight:800;color:#153a5b;margin:0}
-.ytd-subtitle{font-size:11px;color:#71808f;margin-top:4px}
-.ytd-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
-.ytd-kpi{padding:14px 16px;border:1px solid #dbe8f4;border-radius:12px;background:#f8fbff}
-.ytd-kpi-label{font-size:11px;color:#627485;text-transform:uppercase;letter-spacing:.04em}
-.ytd-kpi-value{font-size:30px;font-weight:800;color:#153a5b;margin-top:4px}
-.ytd-kpi-note{font-size:11px;color:#7a8997;margin-top:2px}
+.ytd-section{margin-top:14px;padding:14px 16px;border:1px solid #d8e6f3;border-radius:14px;background:#fff;box-shadow:0 6px 14px rgba(31,70,100,.05)}
+.ytd-header{display:flex;justify-content:space-between;align-items:end;gap:10px;flex-wrap:wrap}
+.ytd-title{font-size:17px;font-weight:800;color:#153a5b;margin:0}
+.ytd-subtitle{font-size:10.5px;color:#71808f;margin-top:3px}
+.ytd-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,260px));justify-content:center;gap:10px;margin:10px auto 0}
+.ytd-kpi{padding:10px 12px;border:1px solid #dbe8f4;border-radius:10px;background:#f8fbff;text-align:center}
+.ytd-kpi-label{font-size:10px;color:#627485;text-transform:uppercase;letter-spacing:.04em}
+.ytd-kpi-value{font-size:27px;font-weight:800;color:#153a5b;margin-top:2px;line-height:1.15}
+.ytd-kpi-note{font-size:10px;color:#7a8997;margin-top:1px}
 .ytd-table-wrap{overflow-x:auto;margin-top:14px}
 .ytd-table{width:100%;border-collapse:collapse;min-width:850px}
 .ytd-table th,.ytd-table td{padding:8px 9px;border-bottom:1px solid #e6eef5;text-align:right;font-size:11px;white-space:nowrap}
@@ -2438,75 +2438,6 @@ but are excluded from PANDAN unstuffing.
 <div class="third-list">
 
 {third_list_html}
-
-</div>
-
-
-</div>
-
-
-<!-- ===================================================
-     Weekly Trend
-     =================================================== -->
-
-<div class="card">
-
-<h3 class="h3">
-
-Weekly Trend
-
-</h3>
-
-
-{chart_svg(
-    ps,
-    os,
-    ts,
-    [
-        f'Week {w}'
-        for w in active
-    ]
-)}
-
-
-<div class="legend">
-
-
-<span>
-
-<i
-    class="sw"
-    style="background:#1f6f96"
-></i>
-
-PANDAN Unstuffing
-
-</span>
-
-
-<span>
-
-<i
-    class="sw"
-    style="background:#4f86c6"
-></i>
-
-Overall Containers
-
-</span>
-
-
-<span>
-
-<i
-    class="sw"
-    style="background:#2d7a4c"
-></i>
-
-EZBUY Third-Party
-
-</span>
-
 
 </div>
 
