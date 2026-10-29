@@ -22,7 +22,8 @@ PROJECT_ORDER = [
     'PDD',
     'PDD_SPX',
     'CAINIAO_COM',
-    'CAINIAO_COE'
+    'CAINIAO_COE',
+    'PDD_COE'
 ]
 
 
@@ -49,7 +50,8 @@ DISPLAY = {
     'PDD': 'PDD',
     'PDD_SPX': 'PDD-SPX',
     'CAINIAO_COM': 'CAINIAO-COM',
-    'CAINIAO_COE': 'CAINIAO-COE'
+    'CAINIAO_COE': 'CAINIAO-COE',
+    'PDD_COE': 'PDD-COE'
 }
 
 
@@ -174,6 +176,18 @@ def project_key(platform, ref):
 
         return 'PDD_SPX'
 
+
+    # --------------------------------------------------------
+    # PDD-COE：单独统计，不属于 PANDAN 拆柜项目
+    # 支持 PDD-COE / PDD_COE / PDD COE / PDDCOE 等写法
+    # --------------------------------------------------------
+
+    if p in {'PDD-COE', 'PDD_COE', 'PDD COE', 'PDDCOE'}:
+        return 'PDD_COE'
+
+    # 某些表格可能只在 Platform 写 PDD，而在 Ref 中标记 COE。
+    if p == 'PDD' and re.search(r'\bPDD[ _-]*COE\b|\bCOE\b', r):
+        return 'PDD_COE'
 
     # --------------------------------------------------------
     # Cainiao：优先根据 Platform 判断；如果 Platform 是泛化的
@@ -443,56 +457,37 @@ def analyze(df):
 
 
         # ----------------------------------------------------
-        # ICA
-        # ----------------------------------------------------
-
-        ica = is_ica_red_seal(
-            remarks
-        )
-
-
-        if ica:
-
-            # ICA 总柜号
-            ica_month[
-                mk
-            ].add(
-                container
-            )
-
-
-        # ----------------------------------------------------
         # Project
         # ----------------------------------------------------
 
         project = project_key(
-
             platform,
-
             row.get(
                 'Cainiao B/L Ref/ Other Ref',
                 ''
             )
-
         )
+        is_pdd_coe = project == 'PDD_COE'
 
+        # ----------------------------------------------------
+        # ICA / RED SEAL
+        # PDD-COE is customs-clearance-only and is not counted in
+        # the warehouse ICA / RED SEAL section of this dashboard.
+        # ----------------------------------------------------
+
+        ica = is_ica_red_seal(remarks)
+
+        if ica and not is_pdd_coe:
+            ica_month[mk].add(container)
 
         # ----------------------------------------------------
         # 如果Project无法识别
         # ----------------------------------------------------
 
         if not project:
-
             if ica:
-
-                ica_unassigned_month[
-                    mk
-                ].add(
-                    container
-                )
-
+                ica_unassigned_month[mk].add(container)
             continue
-
 
         # ----------------------------------------------------
         # Project每周统计
@@ -513,7 +508,7 @@ def analyze(df):
         # ICA Project统计
         # ----------------------------------------------------
 
-        if ica:
+        if ica and not is_pdd_coe:
 
             ica_project_month[
                 (
@@ -538,7 +533,7 @@ def analyze(df):
         # 4. 不计入 PANDAN 拆柜数量
         # ----------------------------------------------------
 
-        if is_ezbuy(remarks):
+        if is_ezbuy(remarks) and not is_pdd_coe:
 
             third_month[
                 (
@@ -1313,9 +1308,9 @@ for monthly and weekly classification.
 <strong>PANDAN unstuffing rule:</strong>
 
 Projects handled by the PANDAN warehouse include
-COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。CAINIAO-COE is tracked separately and is excluded from PANDAN.
+COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。CAINIAO-COE and PDD-COE are tracked separately and excluded from PANDAN. PDD-COE is customs-clearance-only and excluded from warehouse unstuffing / ICA / third-party unstuffing counts.
 
-LAZADA, COMONE Direct, PDD-SPX, and CAINIAO-COE
+LAZADA, COMONE Direct, PDD-SPX, CAINIAO-COE, and PDD-COE
 are excluded from PANDAN.
 
 If the Remarks For Container field contains
@@ -2857,6 +2852,9 @@ DECLARANT_PROJECT_ALIASES = {
     'COMONE_PANDAN': 'Comone',
     'TAOBAO': 'Taobao',
     'PDD': 'Pinduoduo',
+    'PDD-COE': 'Pinduoduo',
+    'PDD_COE': 'Pinduoduo',
+    'PDDCOE': 'Pinduoduo',
     'PINDUODUO': 'Pinduoduo',
     'CAINIAO-COM': 'Cainiao-COM',
     'CAINIAO_COM': 'Cainiao-COM',
@@ -3031,7 +3029,7 @@ def _overall_project(row):
         return 'Lazada'
     if p == 'TAOBAO':
         return 'Taobao'
-    if p == 'PDD':
+    if p in {'PDD', 'PDD-COE', 'PDD_COE', 'PDD COE', 'PDDCOE'}:
         return 'Pinduoduo'
     if p == 'PDD-SPX':
         return 'PDD-SPX'
