@@ -3013,12 +3013,17 @@ def _declarant_name(v):
 
 
 def _effective_overall_date(row):
-    # Declarant Monthly Report: month is based on Gate Out Date.
-    # Only fall back to Unstuffing Date when Gate Out Date is blank.
-    d = parse_date(row.get('Gate Out Date'))
-    if d:
-        return d
-    return parse_date(row.get('Unstuffing Date'))
+    """Return the first usable Overall date in the agreed priority order.
+
+    Gate Out Date -> Unstuffing Date -> Berthing Date & Time.
+    Blank cells and text such as N.A., NA, PAUSE, or '-' are ignored by
+    parse_date and the next date field is tried.
+    """
+    for column in ('Gate Out Date', 'Unstuffing Date', 'Berthing Date & Time'):
+        d = parse_date(row.get(column))
+        if d is not None and not pd.isna(d):
+            return d
+    return None
 
 
 def _overall_project(row):
@@ -3043,23 +3048,17 @@ def _overall_project(row):
 
 
 def analyze_declarant(df, road_df=None, export_df=None):
-    """
-    Declarant Monthly Report based on the same Cargo workbook.
+    """Build the declarant report without using missing dates to drop work.
 
-    Overall:
-      - month = Gate Out Date, otherwise Unstuffing Date
-      - NOA / LOA = responsible-person initials in Overall columns
-      - Permit = No. of Permits, assigned by Permit/Done-By initials
+    Overall NOA, LOA and Permit all use the same date priority:
+      Gate Out Date -> Unstuffing Date -> Berthing Date & Time.
 
-    Road:
-      - month = Date
-      - count each IG permit record
-      - assigned by Done By
+    A valid activity with no usable date is shown under Undated Records.
+    Dates before 2026 are outside this report's reporting window and are not
+    misclassified as undated. Unassigned work is still included in totals.
 
-    Export:
-      - month = Date
-      - count each Permit No. record
-      - assigned by Done By
+    Road and Export retain their own Date fields; undated valid records are
+    also retained under Undated Records.
     """
     monthly = defaultdict(lambda: {
         'noa': defaultdict(int),
@@ -3073,19 +3072,26 @@ def analyze_declarant(df, road_df=None, export_df=None):
     })
     people_by_month = defaultdict(set)
 
-    def add_noa_loa(month, person, project, metric):
-        if not month or not person:
-            return
-        monthly[month][metric][person] += 1
-        monthly[month]['project'][person][metric][project] += 1
-        people_by_month[month].add(person)
+    def report_bucket(date_value):
+        """Return YYYY-MM, Undated, or None for dates before 2026."""
+        if date_value is None or pd.isna(date_value):
+            return 'Undated'
+        if date_value.year < 2026:
+            return None
+        return f"{date_value.year:04d}-{date_value.month:02d}"
 
-    def add_permit(month, person, project, value):
-        if not month or not person or not value:
+    def add_metric(bucket, person, project, metric, value=1):
+        if bucket is None or not value:
             return
-        monthly[month]['permit'][person] += value
-        monthly[month]['project'][person]['permit'][project] += value
-        people_by_month[month].add(person)
+        person = person or 'Unassigned'
+        monthly[bucket][metric][person] += value
+        monthly[bucket]['project'][person][metric][project] += value
+        people_by_month[bucket].add(person)
+
+    def is_activity_marker(value):
+        """A dash/NA is not a completed NOA/LOA/Permit assignment."""
+        s = _clean_person(value).strip().upper()
+        return bool(s) and s not in {'-', '—', 'N.A.', 'NA', 'N/A', 'NONE', 'NAN'}
 
     # ---------------- Overall sheet ----------------
     required_overall = [
@@ -3100,39 +3106,51 @@ def analyze_declarant(df, road_df=None, export_df=None):
         )
 
     for _, row in df.iterrows():
-        month = _month_key(_effective_overall_date(row))
-        project = _overall_project(row)
+        effective_date = _effective_overall_date(row)
+        bucket = report_bucket(effective_date)
+        if bucket is None:
+            continue
 
-        noa_person = _declarant_name(row.get('NOA'))
-        loa_person = _declarant_name(row.get('LOA '))
-        permit_person = _declarant_name(row.get('Permit'))
+        project = _overall_project(row) or 'Unknown'
 
-        # NOA / LOA remain date-based monthly metrics.
-        if month:
-            add_noa_loa(month, noa_person, project, 'noa')
-            add_noa_loa(month, loa_person, project, 'loa')
+        # NOA and LOA are activity counts. A missing date never removes them.
+        noa_value = row.get('NOA')
+        if is_activity_marker(noa_value):
+            add_metric(bucket, _declarant_name(noa_value), project, 'noa', 1)
 
-        # Permit is independent of dates. Keep undated records in a
-        # separate bucket instead of dropping them or assigning a false month.
-        permit_bucket = month or 'Undated'
+        loa_value = row.get('LOA ')
+        if is_activity_marker(loa_value):
+            add_metric(bucket, _declarant_name(loa_value), project, 'loa', 1)
+
+        # Permit is counted from No. of Permits even if Permit/Done By is blank.
         permit_count = _numeric(row.get('No. of Permits'))
-        add_permit(permit_bucket, permit_person, project, permit_count)
+        if permit_count > 0:
+            add_metric(
+                bucket, _declarant_name(row.get('Permit')),
+                project, 'permit', permit_count
+            )
 
     # ---------------- Road sheet ----------------
     if road_df is not None and not road_df.empty:
         for _, row in road_df.iterrows():
-            month = _month_key(row.get('Date'))
-            person = _declarant_name(row.get('Done By'))
-            if month and person and _has_value(row.get('Permit')):
-                add_permit(month, person, 'Road', 1)
+            if not _has_value(row.get('Permit')):
+                continue
+            d = parse_date(row.get('Date'))
+            bucket = report_bucket(d)
+            if bucket is None:
+                continue
+            add_metric(bucket, _declarant_name(row.get('Done By')), 'Road', 'permit', 1)
 
     # ---------------- Export sheet ----------------
     if export_df is not None and not export_df.empty:
         for _, row in export_df.iterrows():
-            month = _month_key(row.get('Date'))
-            person = _declarant_name(row.get('Done By'))
-            if month and person and _has_value(row.get('Permit No.')):
-                add_permit(month, person, 'Export', 1)
+            if not _has_value(row.get('Permit No.')):
+                continue
+            d = parse_date(row.get('Date'))
+            bucket = report_bucket(d)
+            if bucket is None:
+                continue
+            add_metric(bucket, _declarant_name(row.get('Done By')), 'Export', 'permit', 1)
 
     # Clean integer-valued permit totals.
     for mk, data in monthly.items():
@@ -3152,7 +3170,6 @@ def analyze_declarant(df, road_df=None, export_df=None):
         months.append('Undated')
 
     return monthly, people_by_month, months, {}
-
 
 
 
@@ -3210,17 +3227,17 @@ padding:3px 8px;font-size:12px;color:#315c7c}
 <section class="hero">
 <h1>Declarant Monthly Report</h1>
 <p>
-从 January 2026 开始统计。NOA / LOA 按对应列中的负责人记录计数；
-Overall Permit 按 <strong>No. of Permits</strong> 汇总，不受日期是否填写影响；无日期记录单独列入 Undated Permits；
-Road 只按 <strong>IG number</strong> 计数，Export 按 <strong>Permit No.</strong> 计数，
-并都按 <strong>Done By</strong> 列归属报关员。
+从 January 2026 开始统计。Overall 的 NOA、LOA、Permit 共用日期优先级：
+<strong>Gate Out Date → Unstuffing Date → Berthing Date &amp; Time</strong>；日期只用于月份归类，不作为是否计入工作量的条件。
+三种日期均无效的有效业务记录单独列入 Undated Records；未填写报关员的工作量仍计入总数，并归入 Unassigned。
+Road 按有效 Permit 记录计数，Export 按 <strong>Permit No.</strong> 计数。
 </p>
 </section>
 """]
 
     for mk in months:
         if mk == 'Undated':
-            period_title = 'Undated Permits'
+            period_title = 'Undated Records'
         else:
             y, m = map(int, mk.split('-'))
             period_title = datetime(y,m,1).strftime('%B %Y')
