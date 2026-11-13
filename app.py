@@ -22,8 +22,7 @@ PROJECT_ORDER = [
     'PDD',
     'PDD_SPX',
     'CAINIAO_COM',
-    'CAINIAO_COE',
-    'PDD_COE'
+    'CAINIAO_COE'
 ]
 
 
@@ -50,8 +49,7 @@ DISPLAY = {
     'PDD': 'PDD',
     'PDD_SPX': 'PDD-SPX',
     'CAINIAO_COM': 'CAINIAO-COM',
-    'CAINIAO_COE': 'CAINIAO-COE',
-    'PDD_COE': 'PDD-COE'
+    'CAINIAO_COE': 'CAINIAO-COE'
 }
 
 
@@ -176,18 +174,6 @@ def project_key(platform, ref):
 
         return 'PDD_SPX'
 
-
-    # --------------------------------------------------------
-    # PDD-COE：单独统计，不属于 PANDAN 拆柜项目
-    # 支持 PDD-COE / PDD_COE / PDD COE / PDDCOE 等写法
-    # --------------------------------------------------------
-
-    if p in {'PDD-COE', 'PDD_COE', 'PDD COE', 'PDDCOE'}:
-        return 'PDD_COE'
-
-    # 某些表格可能只在 Platform 写 PDD，而在 Ref 中标记 COE。
-    if p == 'PDD' and re.search(r'\bPDD[ _-]*COE\b|\bCOE\b', r):
-        return 'PDD_COE'
 
     # --------------------------------------------------------
     # Cainiao：优先根据 Platform 判断；如果 Platform 是泛化的
@@ -457,37 +443,56 @@ def analyze(df):
 
 
         # ----------------------------------------------------
+        # ICA
+        # ----------------------------------------------------
+
+        ica = is_ica_red_seal(
+            remarks
+        )
+
+
+        if ica:
+
+            # ICA 总柜号
+            ica_month[
+                mk
+            ].add(
+                container
+            )
+
+
+        # ----------------------------------------------------
         # Project
         # ----------------------------------------------------
 
         project = project_key(
+
             platform,
+
             row.get(
                 'Cainiao B/L Ref/ Other Ref',
                 ''
             )
+
         )
-        is_pdd_coe = project == 'PDD_COE'
 
-        # ----------------------------------------------------
-        # ICA / RED SEAL
-        # PDD-COE is customs-clearance-only and is not counted in
-        # the warehouse ICA / RED SEAL section of this dashboard.
-        # ----------------------------------------------------
-
-        ica = is_ica_red_seal(remarks)
-
-        if ica and not is_pdd_coe:
-            ica_month[mk].add(container)
 
         # ----------------------------------------------------
         # 如果Project无法识别
         # ----------------------------------------------------
 
         if not project:
+
             if ica:
-                ica_unassigned_month[mk].add(container)
+
+                ica_unassigned_month[
+                    mk
+                ].add(
+                    container
+                )
+
             continue
+
 
         # ----------------------------------------------------
         # Project每周统计
@@ -508,7 +513,7 @@ def analyze(df):
         # ICA Project统计
         # ----------------------------------------------------
 
-        if ica and not is_pdd_coe:
+        if ica:
 
             ica_project_month[
                 (
@@ -533,7 +538,7 @@ def analyze(df):
         # 4. 不计入 PANDAN 拆柜数量
         # ----------------------------------------------------
 
-        if is_ezbuy(remarks) and not is_pdd_coe:
+        if is_ezbuy(remarks):
 
             third_month[
                 (
@@ -1308,9 +1313,9 @@ for monthly and weekly classification.
 <strong>PANDAN unstuffing rule:</strong>
 
 Projects handled by the PANDAN warehouse include
-COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。CAINIAO-COE and PDD-COE are tracked separately and excluded from PANDAN. PDD-COE is customs-clearance-only and excluded from warehouse unstuffing / ICA / third-party unstuffing counts.
+COMONE PANDAN、TAOBAO、PDD、CAINIAO-COM。CAINIAO-COE is tracked separately and is excluded from PANDAN.
 
-LAZADA, COMONE Direct, PDD-SPX, CAINIAO-COE, and PDD-COE
+LAZADA, COMONE Direct, PDD-SPX, and CAINIAO-COE
 are excluded from PANDAN.
 
 If the Remarks For Container field contains
@@ -2852,9 +2857,6 @@ DECLARANT_PROJECT_ALIASES = {
     'COMONE_PANDAN': 'Comone',
     'TAOBAO': 'Taobao',
     'PDD': 'Pinduoduo',
-    'PDD-COE': 'Pinduoduo',
-    'PDD_COE': 'Pinduoduo',
-    'PDDCOE': 'Pinduoduo',
     'PINDUODUO': 'Pinduoduo',
     'CAINIAO-COM': 'Cainiao-COM',
     'CAINIAO_COM': 'Cainiao-COM',
@@ -3020,38 +3022,24 @@ def _effective_overall_date(row):
 
 
 def _overall_project(row):
-    """Return a report project name for an Overall row.
+    p = _clean_person(row.get('Platform')).upper()
+    ref = _clean_person(row.get('Cainiao B/L Ref/ Other Ref'))
 
-    Known platforms keep their existing report labels. Any new Platform value
-    is returned as its own project name, so its declarant permit count is
-    automatically grouped and displayed without editing an alias list.
-    """
-    raw_platform = _clean_person(row.get('Platform'))
-    p = re.sub(r'\s+', '', raw_platform).upper()
-
-    # Keep the established labels for existing projects.
-    known_projects = {
-        'COMONE': 'Comone',
-        'LAZADA': 'Lazada',
-        'LAZADA.COM': 'Lazada',
-        'TAOBAO': 'Taobao',
-        'PDD': 'Pinduoduo',
-        'PDD-COE': 'Pinduoduo',
-        'PDD_COE': 'Pinduoduo',
-        'PDDCOE': 'Pinduoduo',
-        'PDD-SPX': 'PDD-SPX',
-        'PDD_SPX': 'PDD-SPX',
-        'CAINIAO-COM': 'Cainiao-COM',
-        'CAINIAO_COM': 'Cainiao-COM',
-        'CAINIAO-COE': 'Cainiao-COE',
-        'CAINIAO_COE': 'Cainiao-COE',
-    }
-    if p in known_projects:
-        return known_projects[p]
-
-    # New projects: use the Platform cell's name as the report category.
-    # Trim and collapse whitespace, but preserve the original spelling/case.
-    return re.sub(r'\s+', ' ', raw_platform).strip() or 'Unknown'
+    if p == 'COMONE':
+        return 'Comone' if re.search(r'DIRECT', ref, re.I) else 'Comone'
+    if p == 'LAZADA':
+        return 'Lazada'
+    if p == 'TAOBAO':
+        return 'Taobao'
+    if p == 'PDD':
+        return 'Pinduoduo'
+    if p == 'PDD-SPX':
+        return 'PDD-SPX'
+    if p == 'CAINIAO-COM':
+        return 'Cainiao-COM'
+    if p == 'CAINIAO-COE':
+        return 'Cainiao-COE'
+    return _clean_person(row.get('Platform'))
 
 
 def analyze_declarant(df, road_df=None, export_df=None):
@@ -3113,20 +3101,22 @@ def analyze_declarant(df, road_df=None, export_df=None):
 
     for _, row in df.iterrows():
         month = _month_key(_effective_overall_date(row))
-        if not month:
-            continue
-
         project = _overall_project(row)
 
         noa_person = _declarant_name(row.get('NOA'))
         loa_person = _declarant_name(row.get('LOA '))
         permit_person = _declarant_name(row.get('Permit'))
 
-        add_noa_loa(month, noa_person, project, 'noa')
-        add_noa_loa(month, loa_person, project, 'loa')
+        # NOA / LOA remain date-based monthly metrics.
+        if month:
+            add_noa_loa(month, noa_person, project, 'noa')
+            add_noa_loa(month, loa_person, project, 'loa')
 
+        # Permit is independent of dates. Keep undated records in a
+        # separate bucket instead of dropping them or assigning a false month.
+        permit_bucket = month or 'Undated'
         permit_count = _numeric(row.get('No. of Permits'))
-        add_permit(month, permit_person, project, permit_count)
+        add_permit(permit_bucket, permit_person, project, permit_count)
 
     # ---------------- Road sheet ----------------
     if road_df is not None and not road_df.empty:
@@ -3155,9 +3145,11 @@ def analyze_declarant(df, road_df=None, export_df=None):
                     data['project'][person]['permit'][project] = int(value)
 
     months = sorted(
-        [m for m in monthly if m >= '2026-01'],
+        [m for m in monthly if m != 'Undated' and m >= '2026-01'],
         reverse=True
     )
+    if 'Undated' in monthly:
+        months.append('Undated')
 
     return monthly, people_by_month, months, {}
 
@@ -3219,7 +3211,7 @@ padding:3px 8px;font-size:12px;color:#315c7c}
 <h1>Declarant Monthly Report</h1>
 <p>
 从 January 2026 开始统计。NOA / LOA 按对应列中的负责人记录计数；
-Overall Permit 按 <strong>No. of Permits</strong> 汇总；
+Overall Permit 按 <strong>No. of Permits</strong> 汇总，不受日期是否填写影响；无日期记录单独列入 Undated Permits；
 Road 只按 <strong>IG number</strong> 计数，Export 按 <strong>Permit No.</strong> 计数，
 并都按 <strong>Done By</strong> 列归属报关员。
 </p>
@@ -3227,7 +3219,11 @@ Road 只按 <strong>IG number</strong> 计数，Export 按 <strong>Permit No.</s
 """]
 
     for mk in months:
-        y, m = map(int, mk.split('-'))
+        if mk == 'Undated':
+            period_title = 'Undated Permits'
+        else:
+            y, m = map(int, mk.split('-'))
+            period_title = datetime(y,m,1).strftime('%B %Y')
         data = monthly[mk]
         people = sorted(people_by_month[mk], key=lambda x: x.lower())
 
@@ -3237,7 +3233,7 @@ Road 只按 <strong>IG number</strong> 计数，Export 按 <strong>Permit No.</s
 
         out.append(f"""
 <section class="month">
-<h2>{datetime(y,m,1).strftime('%B %Y')}</h2>
+<h2>{period_title}</h2>
 <div class="cards">
 <div class="metric"><div class="label">NOA Total</div><div class="value">{noa_total}</div></div>
 <div class="metric"><div class="label">LOA Total</div><div class="value">{loa_total}</div></div>
@@ -3314,7 +3310,7 @@ Road 只按 <strong>IG number</strong> 计数，Export 按 <strong>Permit No.</s
 </div>
 <div class="note">
 基础项目顺序：Lazada、Comone、Taobao、Pinduoduo、Cainiao-COM、Cainiao-COE、Road、Export；
-新 Platform 项目会自动按 Overall 表的 Platform 原名归类，并按报关员汇总 Permit 数量，无需修改代码或新增别名。
+新 Platform 项目会自动追加并单独显示。
 </div>
 </div>
 </div>
