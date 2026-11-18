@@ -53,6 +53,10 @@ DISPLAY = {
 }
 
 
+def project_display(project):
+    return DISPLAY.get(project, str(project).replace('_', '-'))
+
+
 # ============================================================
 # 周次
 # ============================================================
@@ -79,45 +83,84 @@ def week_no(d):
 # ============================================================
 
 def parse_date(v):
+    """Parse dates consistently as DD/MM/YYYY for text values.
 
-    if pd.isna(v) or v is None:
+    Excel-native datetime/date values are preserved as-is. Text dates using
+    day-first separators (e.g. 12.01.2026, 12/01/2026, 12-01-2026)
+    are explicitly interpreted as day/month/year. ISO strings such as
+    2026-01-12 remain year-month-day. Numeric Excel serial dates are also
+    supported. Invalid placeholders return None.
+    """
+    if v is None:
         return None
-
-    if str(v).strip() == '':
-        return None
-
-    if isinstance(
-        v,
-        (datetime, date, pd.Timestamp)
-    ):
-        return pd.Timestamp(v).to_pydatetime()
 
     try:
-
-        return pd.to_datetime(
-            v
-        ).to_pydatetime()
-
-    except Exception:
-
-        try:
-
-            return (
-                pd.Timestamp(
-                    '1899-12-30'
-                )
-                +
-                pd.to_timedelta(
-                    float(
-                        str(v).strip()
-                    ),
-                    unit='D'
-                )
-            ).to_pydatetime()
-
-        except Exception:
-
+        if pd.isna(v):
             return None
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(v, (datetime, date, pd.Timestamp)):
+        return pd.Timestamp(v).to_pydatetime()
+
+    # Numeric Excel serial date (avoid treating ordinary date strings as numbers).
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        try:
+            if 1 <= float(v) <= 2958465:
+                return (pd.Timestamp('1899-12-30') + pd.to_timedelta(float(v), unit='D')).to_pydatetime()
+        except (ValueError, TypeError, OverflowError):
+            return None
+        return None
+
+    text = str(v).strip()
+    if not text or text.upper() in {'N.A.', 'NA', 'N/A', 'NONE', 'NAN', '-', '—', 'PAUSE', '/'}:
+        return None
+
+    # Preserve unambiguous ISO dates before applying day-first parsing.
+    iso = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}:\d{2}(?::\d{2})?))?', text)
+    if iso:
+        try:
+            year, month, day = map(int, iso.group(1, 2, 3))
+            base = datetime(year, month, day)
+            if iso.group(4):
+                parts = [int(x) for x in iso.group(4).split(':')]
+                base = base.replace(hour=parts[0], minute=parts[1], second=parts[2] if len(parts) > 2 else 0)
+            return base
+        except ValueError:
+            return None
+
+    # Explicit day-first numeric dates: D/M/YYYY, D.M.YYYY, D-M-YYYY.
+    m = re.fullmatch(r'(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?:\s+(.+))?', text)
+    if m:
+        day, month, year = map(int, m.group(1, 2, 3))
+        try:
+            base = datetime(year, month, day)
+            if m.group(4):
+                parsed_time = pd.to_datetime(m.group(4), errors='coerce')
+                if not pd.isna(parsed_time):
+                    base = base.replace(hour=parsed_time.hour, minute=parsed_time.minute,
+                                        second=parsed_time.second, microsecond=parsed_time.microsecond)
+            return base
+        except ValueError:
+            return None
+
+    # ISO / year-first strings and textual month formats.
+    try:
+        parsed = pd.to_datetime(text, errors='coerce', dayfirst=True)
+        if not pd.isna(parsed):
+            return parsed.to_pydatetime()
+    except (ValueError, TypeError, OverflowError):
+        pass
+
+    # Some sheets store Excel serials as numeric text.
+    try:
+        serial = float(text)
+        if 1 <= serial <= 2958465:
+            return (pd.Timestamp('1899-12-30') + pd.to_timedelta(serial, unit='D')).to_pydatetime()
+    except (ValueError, TypeError, OverflowError):
+        pass
+
+    return None
 
 
 # ============================================================
@@ -202,7 +245,16 @@ def project_key(platform, ref):
         'PDD': 'PDD',
     }
 
-    return mapping.get(p)
+    known = mapping.get(p)
+    if known:
+        return known
+
+    # Automatically create a separate project category for any new Platform
+    # value (e.g. PDD-COE, TEMU, or a future project) instead of dropping it.
+    # Normalize separators so PDD COE / PDD_COE / PDD-COE share one category.
+    if p and p not in {'NAN', 'NONE', 'NULL', 'N/A', 'NA', '-'}:
+        return re.sub(r'-+', '-', re.sub(r'[\s_]+', '-', p)).strip('-') or None
+    return None
 
 
 # ============================================================
@@ -600,11 +652,12 @@ def analyze(df):
 # 月度指标 / 环比
 # ============================================================
 
-def monthly_metrics(mk, pw, tw):
+def monthly_metrics(mk, pw, tw, project_order=None):
     month_pandan = 0
     month_overall = 0
+    project_order = project_order or PROJECT_ORDER
     for w in range(1, 6):
-        counts = {p: len(pw.get((mk, w, p), set())) for p in PROJECT_ORDER}
+        counts = {p: len(pw.get((mk, w, p), set())) for p in project_order}
         third_containers = tw.get((mk, w, 'EZBUY'), set())
         pandan_containers = set()
         for p in PANDAN_PROJECTS:
@@ -688,11 +741,20 @@ def build_html(df):
 
     ) = analyze(df)
 
+    # Keep the established project order, then append every newly detected
+    # Platform category alphabetically. This makes new projects visible in
+    # weekly, monthly, YTD, ICA and third-party breakdowns automatically.
+    discovered_projects = {
+        project
+        for (_, _, project) in pw.keys()
+        if project not in PROJECT_ORDER
+    }
+    project_order = list(PROJECT_ORDER) + sorted(discovered_projects)
 
     out = []
 
     monthly_summary = {
-        mk: monthly_metrics(mk, pw, tw)
+        mk: monthly_metrics(mk, pw, tw, project_order)
         for mk in months
     }
 
@@ -1361,14 +1423,14 @@ the container is automatically classified as an ICA container.
     report_year = 2026
     year_months = [mk for mk in months if mk.startswith(f"{report_year}-")]
 
-    annual_project_totals = {p: 0 for p in PROJECT_ORDER}
+    annual_project_totals = {p: 0 for p in project_order}
     annual_month_rows = []
     annual_pandan_total = 0
     annual_overall_total = 0
 
     for ym in sorted(year_months):
         monthly_project_counts = {}
-        for p in PROJECT_ORDER:
+        for p in project_order:
             c = sum(len(pw.get((ym, w, p), set())) for w in range(1, 6))
             monthly_project_counts[p] = c
             annual_project_totals[p] += c
@@ -1387,9 +1449,9 @@ the container is automatically classified as an ICA container.
     annual_headers = ''.join(
         '<th class="%s">%s</th>' % (
             'pandan-col' if p == 'COMONE_PANDAN' else '',
-            html.escape(DISPLAY[p])
+            html.escape(project_display(p))
         )
-        for p in PROJECT_ORDER
+        for p in project_order
     )
 
     annual_rows_html = []
@@ -1401,7 +1463,7 @@ the container is automatically classified as an ICA container.
                 'pandan-col' if p == 'COMONE_PANDAN' else '',
                 project_counts[p]
             )
-            for p in PROJECT_ORDER
+            for p in project_order
         )
         annual_rows_html.append(
             f'<tr{current_cls}><td class="month-label">{month_label}</td>'
@@ -1415,7 +1477,7 @@ the container is automatically classified as an ICA container.
             'pandan-col' if p == 'COMONE_PANDAN' else '',
             annual_project_totals[p]
         )
-        for p in PROJECT_ORDER
+        for p in project_order
     )
 
     out.append(
@@ -1505,7 +1567,7 @@ the container is automatically classified as an ICA container.
                     ]
                 )
 
-                for p in PROJECT_ORDER
+                for p in project_order
 
             )
 
@@ -1593,7 +1655,7 @@ the container is automatically classified as an ICA container.
 
             p: 0
 
-            for p in PROJECT_ORDER
+            for p in project_order
 
         }
 
@@ -1624,14 +1686,14 @@ the container is automatically classified as an ICA container.
                     ]
                 )
 
-                for p in PROJECT_ORDER
+                for p in project_order
 
             }
 
 
             # 月度累计
 
-            for p in PROJECT_ORDER:
+            for p in project_order:
 
                 totals[p] += counts[p]
 
@@ -1767,7 +1829,7 @@ the container is automatically classified as an ICA container.
                     "</td>"
                 )
 
-                for p in PROJECT_ORDER
+                for p in project_order
 
             )
 
@@ -1834,7 +1896,7 @@ Week {w}
                 "</td>"
             )
 
-            for p in PROJECT_ORDER
+            for p in project_order
 
         )
 
@@ -1846,7 +1908,7 @@ Week {w}
         ica_project_rows = []
 
 
-        for p in PROJECT_ORDER:
+        for p in project_order:
 
             c = len(
 
@@ -1868,7 +1930,7 @@ Week {w}
 <tr>
 
 <td>
-{DISPLAY[p]}
+{project_display(p)}
 </td>
 
 <td>
@@ -1898,7 +1960,7 @@ Week {w}
                 ]
             )
 
-            for p in PROJECT_ORDER
+            for p in project_order
 
         )
 
@@ -1955,7 +2017,7 @@ Total
             project_names = []
 
 
-            for p in PROJECT_ORDER:
+            for p in project_order:
 
                 if container in ipm[
                     (
@@ -1965,7 +2027,7 @@ Total
                 ]:
 
                     project_names.append(
-                        DISPLAY[p]
+                        project_display(p)
                     )
 
 
@@ -2051,7 +2113,7 @@ No ICA / RED SEAL containers this month.
             project_names = []
 
 
-            for p in PROJECT_ORDER:
+            for p in project_order:
 
                 if container in tpm[
                     (
@@ -2061,7 +2123,7 @@ No ICA / RED SEAL containers this month.
                 ]:
 
                     project_names.append(
-                        DISPLAY[p]
+                        project_display(p)
                     )
 
 
@@ -2310,9 +2372,9 @@ ICA / RED SEAL Total
 {
     ''.join(
 
-        f"<th>{DISPLAY[p]}</th>"
+        f"<th>{project_display(p)}</th>"
 
-        for p in PROJECT_ORDER
+        for p in project_order
 
     )
 }
